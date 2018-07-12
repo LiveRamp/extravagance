@@ -21,10 +21,19 @@ stripSuffix suffix (s : tail) | suffix == tail = [s]
                                 | otherwise = s : stripSuffix suffix tail
 stripSuffix suffix [] = []
 
+modifyIf :: (a -> Bool) -> (a -> a) -> a -> a
+modifyIf pred trans a = if pred a then trans a else a
+
 data MethodPatch = MethodPatch {
     targetName      :: String,
     methodsToInsert :: [MemberDecl],
     fieldsToInsert  :: [MemberDecl]
+} deriving (Show)
+
+data PreHookPatch = PreHookPatch {
+    targetNameP  :: String,
+    methodToHook :: String,
+    hookCall     :: MemberDecl
 } deriving (Show)
 
 data InterfacePatch = InterfacePatch {
@@ -32,7 +41,7 @@ data InterfacePatch = InterfacePatch {
     interfaceToInsert :: ClassType
 } deriving (Show)
 
-data PatchDescription = MP MethodPatch | IP InterfacePatch deriving (Show)
+data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch deriving (Show)
 
 newtype PatchSet =  PatchSet (M.Map String [PatchDescription]) deriving (Show)
 
@@ -147,8 +156,19 @@ selectFieldsToPatch = filter (memberIsStatic .&& (not . nameStartsWith "static")
 patchField :: MemberDecl -> MemberDecl
 patchField = removeStatic
 
+isPreHook :: MemberDecl -> Bool
+isPreHook m@(MethodDecl _ _ _ _ params _ _ _) =
+    "pre_" `isPrefixOf` getIdentString m &&
+    memberIsStatic m &&
+    methodHasSelfParam m
+isPreHook _ = False
+
+createPreHookInvocation :: String -> MemberDecl -> PreHookPatch
+createPreHookInvocation targetName m = PreHookPatch targetName methodToHook m where
+    methodToHook = fromJust $ stripPrefix "pre_" (getIdentString m)
+
 generatePatchSet :: CompilationUnit -> PatchSet
-generatePatchSet c | isMethodPatch = generateMethodPatch c
+generatePatchSet c  | isMethodPatch = generateMethodPatch c `mappend` generatePreHookPatch c
                     | isInterfacePatch = generateInterfacePatch c
                     | otherwise = mempty where
     className = getIdentString c
@@ -169,6 +189,12 @@ generateInterfacePatch c = PatchSet $ M.singleton targetName [IP interfacePatch]
     thisClass = ClassType [(getIdentifier c, [])]
     interfacePatch = InterfacePatch{targetNameI = targetName, interfaceToInsert = thisClass}
 
+generatePreHookPatch :: CompilationUnit -> PatchSet
+generatePreHookPatch c = PatchSet $ M.singleton targetName (map PreH preHookMethods) where
+    targetName = stripSuffix "Methods" (getIdentString c)
+    members = getMemberDecls c
+    preHookMethods = map (createPreHookInvocation targetName) $ filter isPreHook members
+
 applyPatchSet :: PatchSet -> CompilationUnit -> CompilationUnit
 applyPatchSet (PatchSet patchMap) c = result where
     patchFn = combinePatches <$> M.lookup (getIdentString c) patchMap
@@ -177,7 +203,7 @@ applyPatchSet (PatchSet patchMap) c = result where
 
 overwrite :: Identified a => a -> [a] -> [a]
 overwrite item (head : tail) | getIdentifier item == getIdentifier head = tail ++ [item]
-                                        | otherwise = head : overwrite item tail
+                             | otherwise = head : overwrite item tail
 overwrite item [] = [item]
 
 (++*) :: Identified a => [a] -> [a] -> [a]
@@ -192,6 +218,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
     appendToClass (ClassBody decls) = ClassBody ((patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls)
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) modifyInterfaces appendInterface where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] ++* refs
+applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -203,3 +230,25 @@ modifyClassBody m = modifyClass (gmapT $ mkT m)
 
 modifyInterfaces :: ([RefType] -> [RefType]) -> CompilationUnit -> CompilationUnit
 modifyInterfaces m = modifyClass (gmapT $ mkT m)
+
+modifyMethodStatments :: ([BlockStmt] -> [BlockStmt]) -> MemberDecl -> MemberDecl
+modifyMethodStatments fn (MethodDecl a b c d e f g (MethodBody (Just (Block stmts)))) =
+    MethodDecl a b c d e f g (MethodBody (Just (Block (fn stmts))))
+
+makeMethodCall :: MemberDecl -> MemberDecl -> BlockStmt
+makeMethodCall hook container = BlockStmt $ ExpStmt $ MethodInv invocation where
+    paramExps = map ExpName $ getParamNames container
+    invocation = MethodCall (Name [getIdentifier hook]) paramExps
+
+preHookMatch :: PreHookPatch -> MemberDecl -> Bool
+preHookMatch patch m = nameMatch && paramMatch where
+    nameMatch = getIdentString m == methodToHook patch
+    -- tail here because method is unpatched, so first arg is "self"
+    paramMatch = tail (getParamTypes (hookCall patch)) == getParamTypes m
+
+insertPreHook :: PreHookPatch -> CompilationUnit -> CompilationUnit
+insertPreHook patch = everywhere (mkT insertFn) where
+    stmtMaker = makeMethodCall (hookCall patch)
+    prepender m b = stmtMaker m : b
+    patcher m = (modifyMethodStatments . prepender) m m
+    insertFn = modifyIf (preHookMatch patch) patcher

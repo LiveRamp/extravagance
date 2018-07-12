@@ -113,3 +113,19 @@ instance Identified RefType where
 instance Identified String where
     getIdentifier = Ident . take 3
     setIdentifier (Ident s) other = s
+
+paramType :: FormalParam -> Type
+paramType (FormalParam _ ty _ _) = ty
+
+paramName :: FormalParam -> Name
+paramName (FormalParam _ _ _ var) = Name [getIdentifier var]
+
+getParams :: MemberDecl -> [FormalParam]
+getParams (MethodDecl _ _ _ _ params _ _ _) = params
+getParams m                                 = []
+
+getParamTypes :: MemberDecl -> [Type]
+getParamTypes = map paramType . getParams
+
+getParamNames :: MemberDecl -> [Name]
+getParamNames = map paramName . getParams
