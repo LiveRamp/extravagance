@@ -1,6 +1,7 @@
 module Extravagance where
 
 import           Accessors
+import           Util
 import           Data.Data
 import           Data.Generics
 import           Data.List
@@ -11,18 +12,6 @@ import           Language.Java.Lexer
 import           Language.Java.Parser
 import           Language.Java.Pretty
 import           Language.Java.Syntax
-
-
-(.&&) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
-(.&&) p1 p2 a = p1 a && p2 a
-
-stripSuffix :: String -> String -> String
-stripSuffix suffix (s : tail) | suffix == tail = [s]
-                                | otherwise = s : stripSuffix suffix tail
-stripSuffix suffix [] = []
-
-modifyIf :: (a -> Bool) -> (a -> a) -> a -> a
-modifyIf pred trans a = if pred a then trans a else a
 
 data MethodPatch = MethodPatch {
     targetName      :: String,
@@ -201,13 +190,20 @@ applyPatchSet (PatchSet patchMap) c = result where
     patchedUnit = patchFn <*> pure c
     result = fromMaybe c patchedUnit
 
-overwrite :: Identified a => a -> [a] -> [a]
-overwrite item (head : tail) | getIdentifier item == getIdentifier head = tail ++ [item]
-                             | otherwise = head : overwrite item tail
-overwrite item [] = [item]
+identIn :: Identified a => a -> [a] -> Bool
+identIn a = any (\x -> getIdentifier x == getIdentifier a)
+
+overwriteHead :: Identified a => a -> [a] -> [a]
+overwriteHead item ls = if identIn item ls then item : ls else ls
+
+overwriteTail :: Identified a => a -> [a] -> [a]
+overwriteTail item ls = if identIn item ls then ls ++ [item] else ls
 
 (++*) :: Identified a => [a] -> [a] -> [a]
-(++*) first = foldl (.) id (map overwrite first)
+(++*) first = foldl (.) id (map overwriteTail first)
+
+(*++) :: Identified a => [a] -> [a] -> [a]
+(*++) first = foldl (.) id (map overwriteHead first)
 
 combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
 combinePatches patches = foldl (.) id (map applyPatch patches)
@@ -217,7 +213,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
     fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
     appendToClass (ClassBody decls) = ClassBody ((patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls)
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) modifyInterfaces appendInterface where
-    appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] ++* refs
+    appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
@@ -246,9 +242,17 @@ preHookMatch patch m = nameMatch && paramMatch where
     -- tail here because method is unpatched, so first arg is "self"
     paramMatch = tail (getParamTypes (hookCall patch)) == getParamTypes m
 
+removeExistingPrehook :: [BlockStmt] -> [BlockStmt]
+removeExistingPrehook = filter (not . isPreHookCall) where
+    isPreHookCall (BlockStmt (ExpStmt (MethodInv (MethodCall (Name [Ident s]) _)))) = "pre_" `isPrefixOf` s
+    isPreHookCall a = False
+
 insertPreHook :: PreHookPatch -> CompilationUnit -> CompilationUnit
 insertPreHook patch = everywhere (mkT insertFn) where
     stmtMaker = makeMethodCall (hookCall patch)
     prepender m b = stmtMaker m : b
     patcher m = (modifyMethodStatments . prepender) m m
-    insertFn = modifyIf (preHookMatch patch) patcher
+    cleaner = modifyMethodStatments removeExistingPrehook
+    insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
+
+

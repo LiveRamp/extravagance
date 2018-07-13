@@ -1,3 +1,5 @@
+{-# LANGUAGE ApplicativeDo     #-}
+{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Replacer where
@@ -8,32 +10,39 @@ import           Data.List
 import           Data.Maybe
 import           Debug.Trace
 import           Text.Regex.Applicative
+import           Util
 
+data Section = Section {
+    hash :: String,
+    text :: String
+} deriving (Show)
 
-type Meaningless = String
-
-data CharWrap = C String Meaningless deriving (Show)
-
-instance Eq CharWrap where
-    (==) (C c1 _ ) (C c2 _ ) = c1 == c2
+instance Eq Section where
+    (==) Section {hash = hash1} Section {hash = hash2} = hash1 == hash2
 
 (<++>) :: Monoid m => RE a m -> RE a m -> RE a m
 a <++> b = mappend <$> a <*> b
+
+inSet :: String -> Char -> Bool
+inSet = flip elem
 
 symIn :: String -> RE Char Char
 symIn s = psym (`elem` s)
 
 symNotIn :: String -> RE Char Char
-symNotIn s = psym (not . (`elem` s))
+symNotIn s = psym (not . inSet s)
 
-whiteSpace ::RE Char String
+whiteSpace :: RE Char String
 whiteSpace = some $ psym isSpace
 
-interface :: RE Char String
-interface = few (psym (not . isSpace)) <++> "Interface"
+isPunc :: Char -> Bool
+isPunc = isPunctuation .&& (/= '_')
 
 punctuation ::RE Char String
-punctuation = some $ symIn ",()"
+punctuation = some $ psym isPunc
+
+notWSOrPunc :: RE Char Char
+notWSOrPunc = psym ((not . isSpace) .&& (not . isPunc))
 
 linecomment :: RE Char String
 linecomment =  "//" <++> few anySym <++> "\n"
@@ -41,40 +50,37 @@ linecomment =  "//" <++> few anySym <++> "\n"
 multicomment :: RE Char String
 multicomment =  "/*" <++> few anySym <++> "*/"
 
-preHook :: RE Char String
-preHook = "pre_" <++> many (symNotIn "\n") <++> "\n"
-
 ignoredForEquality :: RE Char String
-ignoredForEquality = join <$> many (linecomment <|> multicomment <|> whiteSpace <|> 
-                                    punctuation <|> interface <|> preHook)
+ignoredForEquality = join <$> many (linecomment <|> multicomment <|> whiteSpace <|> punctuation)
 
-meaningful :: RE Char String
-meaningful = join <$> some (some (sym ',') <|> interface <|> preHook)
+sectionMatcher :: RE Char Section
+sectionMatcher = do
+    ignored <- ignoredForEquality
+    value <- many notWSOrPunc
+    return Section {hash = value, text = ignored ++ value}
 
-wrapChars :: String -> [CharWrap]
-wrapChars [] = []
-wrapChars input      = result : wrapChars rest  where
-    parsed = findFirstPrefix ignoredForEquality input
-    (result, rest) = makeResult input parsed
+sectionize :: String -> Maybe [Section]
+sectionize = match (some sectionMatcher)
 
-makeResult :: String -> Maybe (String, String) -> (CharWrap, String)
-makeResult input (Just (meaningless, h : rest)) = (C [h] meaningless, rest)
-makeResult input (Just (meaningless, []))       = (C "" meaningless,"")
-makeResult (h : rest) Nothing                   = (C [h] "", rest)
+concatSections :: [Section] -> String
+concatSections []                     = []
+concatSections (Section{text} : tail) =  text ++ concatSections tail
 
-unwrapChars :: [CharWrap] -> String
-unwrapChars []                       = []
-unwrapChars (C c meaningless : tail) =  meaningless ++ c ++ unwrapChars tail
-
-createReplace :: CharWrap -> CharWrap -> CharWrap
-createReplace (C _ replacement) (C text ignorable) | isJust (findFirstInfix meaningful ignorable) = C text (traceShowId ignorable)
-                                                   | otherwise = C text replacement
-
-replaceWrappers :: [CharWrap] -> [CharWrap] -> [CharWrap]
-replaceWrappers (replacement : rem) (head : tail)
-    |  traceShowId replacement ==  traceShowId head = createReplace replacement head : replaceWrappers rem tail
+mergeSections' :: Integer -> Bool -> [Section] -> [Section] -> [Section]
+mergeSections' depth forceKeep (replacement : rem) (head : tail)
+    | replacement == head = (if forceKeep then head else replacement) : mergeSections' 0 False rem tail
+    | depth < 100 = head : mergeSections' (depth + 1) True (replacement : rem) tail
     | otherwise = head : tail
-replaceWrappers _ s = s
+mergeSections' _ _ _ orig = orig
+
+mergeSections = mergeSections' 0 False
+
+replaceMatchingStrings' :: String -> String -> Maybe String
+replaceMatchingStrings' replacer original = do
+    sec1 <-  sectionize replacer
+    sec2 <-  sectionize original
+    return $ concatSections (mergeSections sec1 sec2)
 
 replaceMatchingStrings :: String -> String -> String
-replaceMatchingStrings s1 s2 = unwrapChars (replaceWrappers (wrapChars s1) (wrapChars s2))
+replaceMatchingStrings replacer original = fromMaybe original replaced where
+    replaced = replaceMatchingStrings' replacer original
