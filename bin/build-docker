@@ -1,0 +1,1 @@
+STACK_YAML=stack-docker.yaml stack build && docker build -t liveramp/extravagance:latest .
