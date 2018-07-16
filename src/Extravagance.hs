@@ -16,7 +16,8 @@ import           Language.Java.Syntax
 data MethodPatch = MethodPatch {
     targetName      :: String,
     methodsToInsert :: [MemberDecl],
-    fieldsToInsert  :: [MemberDecl]
+    fieldsToInsert  :: [MemberDecl],
+    importsToInsert :: [ImportDecl]
 } deriving (Show)
 
 data PreHookPatch = PreHookPatch {
@@ -167,10 +168,14 @@ generatePatchSet c  | isMethodPatch = generateMethodPatch c `mappend` generatePr
 generateMethodPatch :: CompilationUnit -> PatchSet
 generateMethodPatch c = PatchSet $ M.singleton targetName [MP methodPatch] where
     targetName = stripSuffix "Methods" (getIdentString c)
+    imports = getImportDecls c
     members = getMemberDecls c
     patchedMethods = map (patchMethod (getIdentString c)) $ selectMethodsToPatch members
     patchedFields = map patchField $ selectFieldsToPatch members
-    methodPatch = MethodPatch {targetName = targetName, methodsToInsert =patchedMethods, fieldsToInsert = patchedFields}
+    methodPatch = MethodPatch {targetName = targetName, 
+                               methodsToInsert = patchedMethods, 
+                               fieldsToInsert = patchedFields,
+                               importsToInsert = imports}
 
 generateInterfacePatch :: CompilationUnit -> PatchSet
 generateInterfacePatch c = PatchSet $ M.singleton targetName [IP interfacePatch] where
@@ -190,14 +195,14 @@ applyPatchSet (PatchSet patchMap) c = result where
     patchedUnit = patchFn <*> pure c
     result = fromMaybe c patchedUnit
 
-identIn :: Identified a => a -> [a] -> Bool
-identIn a = any (\x -> getIdentifier x == getIdentifier a)
+identNotIn :: Identified a => a -> [a] -> Bool
+identNotIn a = all (\x -> getIdentifier x /= getIdentifier a)
 
 overwriteHead :: Identified a => a -> [a] -> [a]
-overwriteHead item ls = if identIn item ls then item : ls else ls
+overwriteHead item ls = if identNotIn item ls then item : ls else ls
 
 overwriteTail :: Identified a => a -> [a] -> [a]
-overwriteTail item ls = if identIn item ls then ls ++ [item] else ls
+overwriteTail item ls = if identNotIn item ls then ls ++ [item] else ls
 
 (++*) :: Identified a => [a] -> [a] -> [a]
 (++*) first = foldl (.) id (map overwriteTail first)
@@ -209,10 +214,13 @@ combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
 combinePatches patches = foldl (.) id (map applyPatch patches)
 
 applyPatch :: PatchDescription -> CompilationUnit -> CompilationUnit
-applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) (modifyClassBody appendToClass) where
-    fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
-    appendToClass (ClassBody decls) = ClassBody ((patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls)
-applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) modifyInterfaces appendInterface where
+applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $ 
+    modifyDeclList appendToDeclarations . appendImports where
+        fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
+        imports = importsToInsert methodPatch
+        appendToDeclarations decls = (patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls
+        appendImports (CompilationUnit package existingImports body ) = CompilationUnit package (imports ++* existingImports) body
+applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
 
@@ -223,6 +231,12 @@ modifyClass m = gmapT (mkT modifyTypeDecls) where
 
 modifyClassBody :: (ClassBody -> ClassBody) -> CompilationUnit -> CompilationUnit
 modifyClassBody m = modifyClass (gmapT $ mkT m)
+
+modifyEnumBody :: (EnumBody -> EnumBody) -> CompilationUnit -> CompilationUnit
+modifyEnumBody m = modifyClass (gmapT $ mkT m)
+
+modifyDeclList :: ([Decl] -> [Decl]) -> CompilationUnit -> CompilationUnit
+modifyDeclList m = modifyClassBody (gmapT $ mkT m) . modifyEnumBody (gmapT $ mkT m)
 
 modifyInterfaces :: ([RefType] -> [RefType]) -> CompilationUnit -> CompilationUnit
 modifyInterfaces m = modifyClass (gmapT $ mkT m)

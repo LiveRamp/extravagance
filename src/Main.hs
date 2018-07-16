@@ -10,6 +10,7 @@ import qualified Data.Map.Strict       as M
 import           Data.Maybe
 import qualified Data.Text             as T
 import qualified Data.Text.IO          as TIO
+import           Debug.Trace
 import           Extravagance
 import           Language.Java.Lexer
 import           Language.Java.Parser
@@ -18,7 +19,7 @@ import           Language.Java.Syntax
 import           Replacer
 import           System.Directory.Tree
 import           System.Environment
-import Util
+import           Util
 
 selectFiles :: DirTree a -> Bool
 selectFiles File{} = True
@@ -38,7 +39,7 @@ getCompilationUnitsFromTree :: AnchoredDirTree String -> [CompilationUnit]
 getCompilationUnitsFromTree tree = catMaybes $ toList $ fmap parseCompilationUnit (dirTree tree)
 
 selectTargetedFiles :: PatchSet -> DirTree a -> Bool
-selectTargetedFiles (PatchSet map) (File name _) = M.member (stripSuffix ".java" name) map && name == "AudienceMember.java"
+selectTargetedFiles (PatchSet map) (File name _) = M.member (stripSuffix ".java" name) map
 selectTargetedFiles _ _                          = True
 
 merge :: (a -> b -> c) -> DirTree a -> DirTree b -> DirTree c

@@ -3,6 +3,7 @@
 
 module Accessors where
 
+import           Data.List
 import           Language.Java.Syntax
 
 identString :: Ident -> String
@@ -99,8 +100,7 @@ instance Identified Decl where
     setIdentifier id i@InitDecl{}      = i
 
 instance Identified ClassType where
-    getIdentifier (ClassType ((ident, params) : tail)) = ident
-    getIdentifier c                                    = Ident ""
+    getIdentifier (ClassType idents) = Ident $ intercalate ['.'] (map (identString . fst) idents)
     setIdentifier id (ClassType ((_, params) : tail)) = ClassType ((id, params) : tail)
     setIdentifier id c      = c
 
@@ -109,6 +109,10 @@ instance Identified RefType where
     getIdentifier _                = Ident ""
     setIdentifier id (ClassRefType c) = ClassRefType (setIdentifier id c)
     setIdentifier id c                = c
+
+instance Identified ImportDecl where
+    getIdentifier (ImportDecl static (Name idents) wildcard) = Ident $ intercalate ['.'] (map identString idents)
+    setIdentifier id (ImportDecl static (Name idents) wildcard) = ImportDecl static (Name [id]) wildcard
 
 instance Identified String where
     getIdentifier = Ident . take 3
@@ -129,3 +133,6 @@ getParamTypes = map paramType . getParams
 
 getParamNames :: MemberDecl -> [Name]
 getParamNames = map paramName . getParams
+
+getImportDecls :: CompilationUnit -> [ImportDecl]
+getImportDecls (CompilationUnit package imports body) = imports
