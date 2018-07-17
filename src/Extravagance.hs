@@ -117,7 +117,7 @@ methodHasSelfParam = everything (||) (mkQ False selector) where
     selector param = nameOfFormalParam param == "self"
 
 selectMethodsToPatch :: [MemberDecl] -> [MemberDecl]
-selectMethodsToPatch = filter (memberIsStatic .&& methodHasSelfParam .&& isMethod)
+selectMethodsToPatch = filter (memberIsStatic .&& isMethod)
 
 addPatchedAnnotation :: Modified m => String -> m -> m
 addPatchedAnnotation sourceName = mapModifiers ((:) (Annotation $ toPatchedAnnotation sourceName))
@@ -130,10 +130,11 @@ isPatched m = isPatched' (getModifiers m) where
 
 patchMethod :: String -> MemberDecl -> MemberDecl
 patchMethod sourceName =
-        removeNamedParam "self" .
+        modifyIf methodHasSelfParam 
+        (removeNamedParam "self" .
         replaceAllSelfsWithThises .
         addPatchedAnnotation sourceName .
-        removeStatic
+        removeStatic)
         where
         replaceAllSelfsWithThises = everywhere (mkT $ modifyName (replaceMemberOwnerName "self" "this"))
 
