@@ -130,7 +130,7 @@ isPatched m = isPatched' (getModifiers m) where
 
 patchMethod :: String -> MemberDecl -> MemberDecl
 patchMethod sourceName =
-        modifyIf methodHasSelfParam 
+        modifyIf methodHasSelfParam
         (removeNamedParam "self" .
         replaceAllSelfsWithThises .
         addPatchedAnnotation sourceName .
@@ -173,8 +173,8 @@ generateMethodPatch c = PatchSet $ M.singleton targetName [MP methodPatch] where
     members = getMemberDecls c
     patchedMethods = map (patchMethod (getIdentString c)) $ selectMethodsToPatch members
     patchedFields = map patchField $ selectFieldsToPatch members
-    methodPatch = MethodPatch {targetName = targetName, 
-                               methodsToInsert = patchedMethods, 
+    methodPatch = MethodPatch {targetName = targetName,
+                               methodsToInsert = patchedMethods,
                                fieldsToInsert = patchedFields,
                                importsToInsert = imports}
 
@@ -215,7 +215,7 @@ combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
 combinePatches patches = foldl (.) id (map applyPatch patches)
 
 applyPatch :: PatchDescription -> CompilationUnit -> CompilationUnit
-applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $ 
+applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
     modifyDeclList appendToDeclarations . appendImports where
         fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
         imports = importsToInsert methodPatch
