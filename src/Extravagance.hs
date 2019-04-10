@@ -31,7 +31,11 @@ data InterfacePatch = InterfacePatch {
     interfaceToInsert :: ClassType
 } deriving (Show)
 
-data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch deriving (Show)
+data RedactionPatch = RedactionPatch {
+    targetNameR :: String
+} deriving (Show)
+
+data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch | RP RedactionPatch deriving (Show)
 
 newtype PatchSet =  PatchSet (M.Map String [PatchDescription]) deriving (Show)
 
@@ -224,6 +228,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
+applyPatch (RP redactionPatch) = trace ("Applying Redaction Patch " ++ targetNameR redactionPatch) id -- TODO
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -270,4 +275,21 @@ insertPreHook patch = everywhere (mkT insertFn) where
     cleaner = modifyMethodStatments removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
+redactFields :: RedactionPatch -> BlockStmt -> BlockStmt
+redactFields patch (LocalVars modifiers varType varDecls) =
+    LocalVars modifiers varType $ map redactVarDecl varDecls
+    where redactVarDecl decl@(VarDecl declId varInit) =
+            case varInit of
+                Nothing -> decl
+                Just (InitExp exp) -> VarDecl declId (Just (InitExp (redactExp patch exp)))
+                Just (InitArray arrayInit) -> decl
+                where redactVarInit init = case init of
+                        InitExp exp -> InitExp $ redactExp patch exp
+                        InitArray (ArrayInit inits) -> InitArray (ArrayInit (map redactVarInit inits))
+-- TODO handle other statements
 
+redactExp :: RedactionPatch -> Exp -> Exp
+redactExp (RedactionPatch target) fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name)))
+    | target == name = Lit $ String "redacted"
+    | otherwise      = fieldAccess
+-- TODO handle other expressions
