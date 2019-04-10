@@ -275,14 +275,17 @@ insertPreHook patch = everywhere (mkT insertFn) where
     cleaner = modifyMethodStatments removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
-redactFieldsFromBlock :: RedactionPatch -> BlockStmt -> BlockStmt
-redactFieldsFromBlock patch (LocalVars modifiers varType varDecls) =
+redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
+redactBlockStmt patch (LocalVars modifiers varType varDecls) =
     LocalVars modifiers varType $ map redactVarDecl varDecls
     where redactVarDecl decl@(VarDecl declId varInit) =
             case varInit of
                 Nothing -> decl
                 Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
 -- TODO handle other statements
+
+redactBlock :: RedactionPatch -> Block -> Block
+redactBlock patch (Block stmts) = Block $ map (redactBlockStmt patch) stmts
 
 redactExp :: RedactionPatch -> Exp -> Exp
 -- redact direct field accesses
@@ -312,8 +315,22 @@ redactExp patch (MethodInv (SuperMethodCall a b args)) = MethodInv $ SuperMethod
 redactExp patch (MethodInv (ClassMethodCall a b c args)) = MethodInv $ ClassMethodCall a b c $ redactExps patch args
 redactExp patch (MethodInv (TypeMethodCall a b c args)) = MethodInv $ TypeMethodCall a b c $ redactExps patch args
 
--- redact casts
 redactExp patch (Cast a exp) = Cast a $ redactExp patch exp
+
+-- redact non-boolean binOps
+-- i.e. keep things like this.some_field == null
+redactExp patch binOp@(BinOp lhs op rhs)
+    | op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq] = binOp
+    | otherwise = BinOp (redactExp patch lhs) op (redactExp patch rhs)
+
+redactExp patch (Cond a yes no) = Cond a (redactExp patch yes) (redactExp patch no)
+
+redactExp patch (Assign lhs op rhs) = Assign lhs op $ redactExp patch rhs
+
+redactExp patch (Lambda params lambdaExpression) = Lambda params $
+    case lambdaExpression of
+        LambdaExpression exp -> LambdaExpression $ redactExp patch exp
+        LambdaBlock block -> LambdaBlock $ redactBlock patch block
 
 -- TODO handle other expressions
 redactExp patch a = a
