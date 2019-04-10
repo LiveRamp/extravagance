@@ -333,7 +333,7 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     (MethodInv call) -> MethodInv $ case call of
         (MethodCall a args) -> MethodCall a $ redactExps patch args
         -- this is the one that really matters, since thrift uses sb.append(this.whatever_field)
-        (PrimaryMethodCall exp a b args) -> PrimaryMethodCall (exp) a b (redactExps patch args)
+        (PrimaryMethodCall exp a b args) -> PrimaryMethodCall exp a b (redactExps patch args)
         (SuperMethodCall a b args) -> SuperMethodCall a b $ redactExps patch args
         (ClassMethodCall a b c args) -> ClassMethodCall a b c $ redactExps patch args
         (TypeMethodCall a b c args) -> TypeMethodCall a b c $ redactExps patch args
