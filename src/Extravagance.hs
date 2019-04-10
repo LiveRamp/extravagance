@@ -312,8 +312,11 @@ redactExp patch (MethodInv (SuperMethodCall a b args)) = MethodInv $ SuperMethod
 redactExp patch (MethodInv (ClassMethodCall a b c args)) = MethodInv $ ClassMethodCall a b c $ redactExps patch args
 redactExp patch (MethodInv (TypeMethodCall a b c args)) = MethodInv $ TypeMethodCall a b c $ redactExps patch args
 
+-- redact casts
+redactExp patch (Cast a exp) = Cast a $ redactExp patch exp
+
 -- TODO handle other expressions
-redactExp patch a =  a
+redactExp patch a = a
 
 redactExps :: RedactionPatch -> [Exp] -> [Exp]
 redactExps patch = map (redactExp patch)
