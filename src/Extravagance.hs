@@ -324,15 +324,12 @@ redactExp patch binOp@(BinOp lhs op rhs)
     | otherwise = BinOp (redactExp patch lhs) op (redactExp patch rhs)
 
 redactExp patch (Cond a yes no) = Cond a (redactExp patch yes) (redactExp patch no)
-
 redactExp patch (Assign lhs op rhs) = Assign lhs op $ redactExp patch rhs
-
 redactExp patch (Lambda params lambdaExpression) = Lambda params $
     case lambdaExpression of
         LambdaExpression exp -> LambdaExpression $ redactExp patch exp
         LambdaBlock block -> LambdaBlock $ redactBlock patch block
 
--- TODO handle other expressions
 redactExp patch a = a
 
 redactExps :: RedactionPatch -> [Exp] -> [Exp]
