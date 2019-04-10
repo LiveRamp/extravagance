@@ -307,49 +307,45 @@ redactBlock :: RedactionPatch -> Block -> Block
 redactBlock patch (Block stmts) = Block $ map (redactBlockStmt patch) stmts
 
 redactExp :: RedactionPatch -> Exp -> Exp
--- redact direct field accesses
-redactExp (RedactionPatch target) fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name)))
-    | target == name = Lit $ String "redacted"
-    | otherwise      = fieldAccess
--- If a field is called some_field, and the reference is just to "some_field"
--- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
-redactExp (RedactionPatch target) expName@(ExpName (Name [Ident name]))
-    | target == name = Lit $ String "redacted"
-    | otherwise      = expName
-redactExp _ expName@(ExpName _) = expName
+redactExp patch@(RedactionPatch target) exp = case exp of
+    -- direct field accesses
+    fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name))) -> if target == name then Lit $ String "redacted" else fieldAccess
+    -- If a field is called some_field, and the reference is just to "some_field"
+    -- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
+    expName@(ExpName (Name [Ident name])) -> if target == name then Lit $ String "redacted" else expName
+    expName@(ExpName _) -> expName
 
--- redact constructor calls
-redactExp patch (InstanceCreation a b args c) = InstanceCreation a b (redactExps patch args) c
-redactExp patch (QualInstanceCreation exp a b args c) = QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
+    -- redact constructor calls
+    (InstanceCreation a b args c) -> InstanceCreation a b (redactExps patch args) c
+    (QualInstanceCreation exp a b args c) -> QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
 
--- redact array creations
--- ArrayCreate intentionally not modified (e.g. new int[some_field.length()] would not be changed to new int["redacted".length()])
-redactExp patch (ArrayCreateInit a b arrayInit) = ArrayCreateInit a b $ redactArrayInit patch arrayInit
+    -- redact array creations
+    -- ArrayCreate intentionally not modified (e.g. new int[some_field.length()] would not be changed to new int["redacted".length()])
+    (ArrayCreateInit a b arrayInit) -> ArrayCreateInit a b $ redactArrayInit patch arrayInit
 
--- redact method calls
-redactExp patch (MethodInv (MethodCall a args)) = MethodInv $ MethodCall a $ redactExps patch args
--- this is the one that really matters, since thrift uses sb.append(this.whatever_field)
-redactExp patch (MethodInv (PrimaryMethodCall exp a b args)) = MethodInv $ PrimaryMethodCall (redactExp patch exp) a b (redactExps patch args)
-redactExp patch (MethodInv (SuperMethodCall a b args)) = MethodInv $ SuperMethodCall a b $ redactExps patch args
-redactExp patch (MethodInv (ClassMethodCall a b c args)) = MethodInv $ ClassMethodCall a b c $ redactExps patch args
-redactExp patch (MethodInv (TypeMethodCall a b c args)) = MethodInv $ TypeMethodCall a b c $ redactExps patch args
+    -- redact method calls
+    (MethodInv (MethodCall a args)) -> MethodInv $ MethodCall a $ redactExps patch args
+    -- this is the one that really matters, since thrift uses sb.append(this.whatever_field)
+    (MethodInv (PrimaryMethodCall exp a b args)) -> MethodInv $ PrimaryMethodCall (exp) a b (redactExps patch args)
+    (MethodInv (SuperMethodCall a b args)) -> MethodInv $ SuperMethodCall a b $ redactExps patch args
+    (MethodInv (ClassMethodCall a b c args)) -> MethodInv $ ClassMethodCall a b c $ redactExps patch args
+    (MethodInv (TypeMethodCall a b c args)) -> MethodInv $ TypeMethodCall a b c $ redactExps patch args
 
-redactExp patch (Cast a exp) = Cast a $ redactExp patch exp
+    (Cast a exp) -> Cast a $ redactExp patch exp
 
--- redact non-boolean binOps
--- i.e. keep things like this.some_field == null
-redactExp patch binOp@(BinOp lhs op rhs)
-    | op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq] = binOp
-    | otherwise = BinOp (redactExp patch lhs) op (redactExp patch rhs)
+    -- redact non-boolean binOps
+    -- i.e. keep things like this.some_field == null
+    binOp@(BinOp lhs op rhs) -> if op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq] then binOp
+        else BinOp (redactExp patch lhs) op (redactExp patch rhs)
 
-redactExp patch (Cond a yes no) = Cond a (redactExp patch yes) (redactExp patch no)
-redactExp patch (Assign lhs op rhs) = Assign lhs op $ redactExp patch rhs
-redactExp patch (Lambda params lambdaExpression) = Lambda params $
-    case lambdaExpression of
-        LambdaExpression exp -> LambdaExpression $ redactExp patch exp
-        LambdaBlock block -> LambdaBlock $ redactBlock patch block
-
-redactExp patch a = a
+    -- other expressions
+    (Cond a yes no) -> Cond a (redactExp patch yes) (redactExp patch no)
+    (Assign lhs op rhs) -> Assign lhs op $ redactExp patch rhs
+    (Lambda params lambdaExpression) -> Lambda params $
+        case lambdaExpression of
+            LambdaExpression exp -> LambdaExpression $ redactExp patch exp
+            LambdaBlock block -> LambdaBlock $ redactBlock patch block
+    _ -> exp
 
 redactExps :: RedactionPatch -> [Exp] -> [Exp]
 redactExps patch = map (redactExp patch)
