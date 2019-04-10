@@ -338,14 +338,13 @@ redactExp patch@(RedactionPatch target) exp = case exp of
         (ClassMethodCall a b c args) -> ClassMethodCall a b c $ redactExps patch args
         (TypeMethodCall a b c args) -> TypeMethodCall a b c $ redactExps patch args
 
-    (Cast a exp) -> Cast a $ redactExp patch exp
-
     -- redact non-boolean binOps
     -- i.e. keep things like this.some_field == null
     binOp@(BinOp lhs op rhs) -> if op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq] then binOp
         else BinOp (redactExp patch lhs) op (redactExp patch rhs)
 
     -- other expressions
+    (Cast a exp) -> Cast a $ redactExp patch exp
     (Cond a yes no) -> Cond a (redactExp patch yes) (redactExp patch no)
     (Assign lhs op rhs) -> Assign lhs op $ redactExp patch rhs
     (Lambda params lambdaExpression) -> Lambda params $
