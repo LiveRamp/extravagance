@@ -299,7 +299,7 @@ redactExp _ expName@(ExpName _) = expName
 redactExp patch (InstanceCreation a b args c) = InstanceCreation a b (redactExps patch args) c
 redactExp patch (QualInstanceCreation exp a b args c) = QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
 -- redact array creations
-redactExp patch (ArrayCreate a exps c) = ArrayCreate a (redactExps patch exps) c
+-- ArrayCreate intentionally not modified (e.g. new int[some_field.length()] would not be changed to new int["redacted".length()])
 redactExp patch (ArrayCreateInit a b arrayInit) = ArrayCreateInit a b $ redactArrayInit patch arrayInit
 -- TODO handle other expressions
 redactExp patch a =  a
