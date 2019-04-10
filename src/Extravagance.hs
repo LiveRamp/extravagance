@@ -228,7 +228,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch "toString"
+applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -247,8 +247,8 @@ modifyDeclList m = modifyClassBody (gmapT $ mkT m) . modifyEnumBody (gmapT $ mkT
 modifyInterfaces :: ([RefType] -> [RefType]) -> CompilationUnit -> CompilationUnit
 modifyInterfaces m = modifyClass (gmapT $ mkT m)
 
-modifyMethodStatments :: ([BlockStmt] -> [BlockStmt]) -> MemberDecl -> MemberDecl
-modifyMethodStatments fn (MethodDecl a b c d e f g (MethodBody (Just (Block stmts)))) =
+modifyMethodStatements :: ([BlockStmt] -> [BlockStmt]) -> MemberDecl -> MemberDecl
+modifyMethodStatements fn (MethodDecl a b c d e f g (MethodBody (Just (Block stmts)))) =
     MethodDecl a b c d e f g (MethodBody (Just (Block (fn stmts))))
 
 makeMethodCall :: MemberDecl -> MemberDecl -> BlockStmt
@@ -271,12 +271,16 @@ insertPreHook :: PreHookPatch -> CompilationUnit -> CompilationUnit
 insertPreHook patch = everywhere (mkT insertFn) where
     stmtMaker = makeMethodCall (hookCall patch)
     prepender m b = stmtMaker m : b
-    patcher m = (modifyMethodStatments . prepender) m m
-    cleaner = modifyMethodStatments removeExistingPrehook
+    patcher m = (modifyMethodStatements . prepender) m m
+    cleaner = modifyMethodStatements removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
-redactMethod :: RedactionPatch -> String -> CompilationUnit -> CompilationUnit
-redactMethod patch methodName = id
+redactMethodMatch :: MemberDecl -> Bool
+redactMethodMatch m = getIdentString m == "toString" && getParams m == []
+
+redactMethod :: RedactionPatch -> CompilationUnit -> CompilationUnit
+redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) where
+    patchMethod = modifyMethodStatements (map (redactBlockStmt patch))
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
 redactBlockStmt patch blockStmt = case blockStmt of
