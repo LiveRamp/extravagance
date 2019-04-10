@@ -294,7 +294,7 @@ redactExp (RedactionPatch target) fieldAccess@(FieldAccess (PrimaryFieldAccess e
 redactExp (RedactionPatch target) expName@(ExpName (Name [Ident name]))
     | target == name = Lit $ String "redacted"
     | otherwise      = expName
-redactExp (RedactionPatch target) expName@(ExpName _) = expName
+redactExp _ expName@(ExpName _) = expName
 -- redact constructor calls
 redactExp patch (InstanceCreation a b args c) = InstanceCreation a b (redactExps patch args) c
 redactExp patch (QualInstanceCreation exp a b args c) = QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
