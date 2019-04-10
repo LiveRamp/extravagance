@@ -285,6 +285,7 @@ redactFieldsFromBlock patch (LocalVars modifiers varType varDecls) =
 -- TODO handle other statements
 
 redactExp :: RedactionPatch -> Exp -> Exp
+-- redact direct field accesses
 redactExp (RedactionPatch target) fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name)))
     | target == name = Lit $ String "redacted"
     | otherwise      = fieldAccess
@@ -294,7 +295,18 @@ redactExp (RedactionPatch target) expName@(ExpName (Name [Ident name]))
     | target == name = Lit $ String "redacted"
     | otherwise      = expName
 redactExp (RedactionPatch target) expName@(ExpName _) = expName
+-- redact constructor calls
+redactExp patch (InstanceCreation a b args c) = InstanceCreation a b (redactExps patch args) c
+redactExp patch (QualInstanceCreation exp a b args c) = QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
+-- redact array creations
+redactExp patch (ArrayCreate a exps c) = ArrayCreate a (redactExps patch exps) c
+redactExp patch (ArrayCreateInit a b arrayInit) = ArrayCreateInit a b $ redactArrayInit patch arrayInit
 -- TODO handle other expressions
+redactExp patch a =  a
+
+redactExps :: RedactionPatch -> [Exp] -> [Exp]
+redactExps patch = map (redactExp patch)
+
 redactVarInit :: RedactionPatch -> VarInit -> VarInit
 redactVarInit patch init = case init of
     InitExp exp -> InitExp $ redactExp patch exp
