@@ -310,7 +310,7 @@ redactExps patch = map (redactExp patch)
 redactVarInit :: RedactionPatch -> VarInit -> VarInit
 redactVarInit patch init = case init of
     InitExp exp -> InitExp $ redactExp patch exp
-    InitArray (ArrayInit inits) -> InitArray $ ArrayInit $ map (redactVarInit patch) inits
+    InitArray arrayInit -> InitArray $ redactArrayInit patch arrayInit
 
 redactArrayInit :: RedactionPatch -> ArrayInit -> ArrayInit
 redactArrayInit patch (ArrayInit varInits) = ArrayInit $ map (redactVarInit patch) varInits
