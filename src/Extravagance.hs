@@ -296,12 +296,11 @@ redactBlockStmt patch blockStmt = case blockStmt of
             (Try tryBlock catches maybeFinallyBlock) -> Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
             (Labeled a stmt) -> Labeled a $ redactStmt stmt
             _ -> block
-    (LocalVars modifiers varType varDecls) ->
-        LocalVars modifiers varType $ map redactVarDecl varDecls where
-            redactVarDecl decl@(VarDecl declId varInit) =
-                case varInit of
-                    Nothing -> decl
-                    Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
+    (LocalVars modifiers varType varDecls) -> LocalVars modifiers varType $ map redactVarDecl varDecls where
+        redactVarDecl decl@(VarDecl declId varInit) =
+            case varInit of
+                Nothing -> decl
+                Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
     -- technically we should handle this case, but if a toString method has a local anonymous class
     -- then I think we're getting what we deserve
     c@(LocalClass _) -> c
