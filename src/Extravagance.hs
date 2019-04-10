@@ -276,8 +276,21 @@ insertPreHook patch = everywhere (mkT insertFn) where
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
-redactBlockStmt patch (BlockStmt stmt) = BlockStmt $ redactStmt patch stmt
-    where redactStmt patch a = a
+redactBlockStmt patch (BlockStmt stmt) = BlockStmt $ redactStmt stmt
+    where redactStmt (StmtBlock block) = StmtBlock $ redactBlock patch block
+          redactStmt (IfThen cond stmt) = IfThen cond $ redactStmt stmt
+          redactStmt (IfThenElse cond yes no) = IfThenElse cond (redactStmt yes) (redactStmt no)
+          redactStmt (While cond body) = While cond $ redactStmt body
+          redactStmt (BasicFor a b c body) = BasicFor a b c $ redactStmt body
+          redactStmt (EnhancedFor a b c d body) = EnhancedFor a b c d $ redactStmt body
+          redactStmt (ExpStmt exp) = ExpStmt $ redactExp patch exp
+          redactStmt (Switch cond blocks) = Switch cond $ map redactSwitchBlock blocks
+                where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ map (redactBlockStmt patch) stmts
+          redactStmt (Do stmt cond) = Do (redactStmt stmt) cond
+          redactStmt (Return (Just exp)) = Return $ Just $ redactExp patch exp
+          redactStmt (Try tryBlock catches maybeFinallyBlock) = Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
+          redactStmt (Labeled a stmt) = Labeled a $ redactStmt stmt
+          redactStmt a = a
 redactBlockStmt patch (LocalVars modifiers varType varDecls) =
     LocalVars modifiers varType $ map redactVarDecl varDecls
     where redactVarDecl decl@(VarDecl declId varInit) =
