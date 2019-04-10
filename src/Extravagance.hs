@@ -347,6 +347,7 @@ redactExp patch@(RedactionPatch target) exp = case exp of
             LambdaExpression exp -> LambdaExpression $ redactExp patch exp
             LambdaBlock block -> LambdaBlock $ redactBlock patch block
     _ -> exp
+    where redactedExp = Lit $ String "<redacted>"
 
 redactExps :: RedactionPatch -> [Exp] -> [Exp]
 redactExps patch = map (redactExp patch)
@@ -358,6 +359,3 @@ redactVarInit patch init = case init of
 
 redactArrayInit :: RedactionPatch -> ArrayInit -> ArrayInit
 redactArrayInit patch (ArrayInit varInits) = ArrayInit $ map (redactVarInit patch) varInits
-
-redactedExp :: Exp
-redactedExp = Lit $ String "<redacted>"
