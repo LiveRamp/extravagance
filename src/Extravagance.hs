@@ -276,31 +276,32 @@ insertPreHook patch = everywhere (mkT insertFn) where
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
-redactBlockStmt patch (BlockStmt stmt) = BlockStmt $ redactStmt stmt
-    where redactStmt (StmtBlock block) = StmtBlock $ redactBlock patch block
-          redactStmt (IfThen cond stmt) = IfThen cond $ redactStmt stmt
-          redactStmt (IfThenElse cond yes no) = IfThenElse cond (redactStmt yes) (redactStmt no)
-          redactStmt (While cond body) = While cond $ redactStmt body
-          redactStmt (BasicFor a b c body) = BasicFor a b c $ redactStmt body
-          redactStmt (EnhancedFor a b c d body) = EnhancedFor a b c d $ redactStmt body
-          redactStmt (ExpStmt exp) = ExpStmt $ redactExp patch exp
-          redactStmt (Switch cond blocks) = Switch cond $ map redactSwitchBlock blocks
-                where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ map (redactBlockStmt patch) stmts
-          redactStmt (Do stmt cond) = Do (redactStmt stmt) cond
-          redactStmt (Return (Just exp)) = Return $ Just $ redactExp patch exp
-          redactStmt (Try tryBlock catches maybeFinallyBlock) = Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
-          redactStmt (Labeled a stmt) = Labeled a $ redactStmt stmt
-          redactStmt a = a
-redactBlockStmt patch (LocalVars modifiers varType varDecls) =
-    LocalVars modifiers varType $ map redactVarDecl varDecls
-    where redactVarDecl decl@(VarDecl declId varInit) =
-            case varInit of
-                Nothing -> decl
-                Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
--- technically we should handle this case, but if a toString method has a local anonymous class
--- then I think we're getting what we deserve
-redactBlockStmt patch c@(LocalClass _) = c
--- TODO handle other statements
+redactBlockStmt patch blockStmt = case blockStmt of
+    (BlockStmt stmt) -> BlockStmt $ redactStmt stmt
+        where redactStmt block = case block of
+                (StmtBlock block) -> StmtBlock $ redactBlock patch block
+                (IfThen cond stmt) -> IfThen cond $ redactStmt stmt
+                (IfThenElse cond yes no) -> IfThenElse cond (redactStmt yes) (redactStmt no)
+                (While cond body) -> While cond $ redactStmt body
+                (BasicFor a b c body) -> BasicFor a b c $ redactStmt body
+                (EnhancedFor a b c d body) -> EnhancedFor a b c d $ redactStmt body
+                (ExpStmt exp) -> ExpStmt $ redactExp patch exp
+                (Switch cond blocks) -> Switch cond $ map redactSwitchBlock blocks
+                    where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ map (redactBlockStmt patch) stmts
+                (Do stmt cond) -> Do (redactStmt stmt) cond
+                (Return (Just exp)) -> Return $ Just $ redactExp patch exp
+                (Try tryBlock catches maybeFinallyBlock) -> Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
+                (Labeled a stmt) -> Labeled a $ redactStmt stmt
+                _ -> block
+    (LocalVars modifiers varType varDecls) ->
+        LocalVars modifiers varType $ map redactVarDecl varDecls
+        where redactVarDecl decl@(VarDecl declId varInit) =
+                case varInit of
+                    Nothing -> decl
+                    Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
+    -- technically we should handle this case, but if a toString method has a local anonymous class
+    -- then I think we're getting what we deserve
+    c@(LocalClass _) -> c
 
 redactBlock :: RedactionPatch -> Block -> Block
 redactBlock patch (Block stmts) = Block $ map (redactBlockStmt patch) stmts
