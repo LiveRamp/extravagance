@@ -292,4 +292,10 @@ redactExp :: RedactionPatch -> Exp -> Exp
 redactExp (RedactionPatch target) fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name)))
     | target == name = Lit $ String "redacted"
     | otherwise      = fieldAccess
+-- If a field is called some_field, and the reference is just to "some_field"
+-- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
+redactExp (RedactionPatch target) expName@(ExpName (Name [Ident name]))
+    | target == name = Lit $ String "redacted"
+    | otherwise      = expName
+redactExp (RedactionPatch target) expName@(ExpName _) = expName
 -- TODO handle other expressions
