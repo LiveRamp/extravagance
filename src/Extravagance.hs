@@ -281,11 +281,7 @@ redactFieldsFromBlock patch (LocalVars modifiers varType varDecls) =
     where redactVarDecl decl@(VarDecl declId varInit) =
             case varInit of
                 Nothing -> decl
-                Just (InitExp exp) -> VarDecl declId $ Just $ InitExp $ redactExp patch exp
-                Just (InitArray arrayInit) -> decl
-                where redactVarInit init = case init of
-                        InitExp exp -> InitExp $ redactExp patch exp
-                        InitArray (ArrayInit inits) -> InitArray $ ArrayInit $ map redactVarInit inits
+                Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
 -- TODO handle other statements
 
 redactExp :: RedactionPatch -> Exp -> Exp
@@ -299,3 +295,10 @@ redactExp (RedactionPatch target) expName@(ExpName (Name [Ident name]))
     | otherwise      = expName
 redactExp (RedactionPatch target) expName@(ExpName _) = expName
 -- TODO handle other expressions
+redactVarInit :: RedactionPatch -> VarInit -> VarInit
+redactVarInit patch init = case init of
+    InitExp exp -> InitExp $ redactExp patch exp
+    InitArray (ArrayInit inits) -> InitArray $ ArrayInit $ map (redactVarInit patch) inits
+
+redactArrayInit :: RedactionPatch -> ArrayInit -> ArrayInit
+redactArrayInit patch (ArrayInit varInits) = ArrayInit $ map (redactVarInit patch) varInits
