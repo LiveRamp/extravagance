@@ -275,8 +275,8 @@ insertPreHook patch = everywhere (mkT insertFn) where
     cleaner = modifyMethodStatments removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
-redactFields :: RedactionPatch -> BlockStmt -> BlockStmt
-redactFields patch (LocalVars modifiers varType varDecls) =
+redactFieldsFromBlock :: RedactionPatch -> BlockStmt -> BlockStmt
+redactFieldsFromBlock patch (LocalVars modifiers varType varDecls) =
     LocalVars modifiers varType $ map redactVarDecl varDecls
     where redactVarDecl decl@(VarDecl declId varInit) =
             case varInit of
