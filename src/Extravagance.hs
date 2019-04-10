@@ -276,12 +276,17 @@ insertPreHook patch = everywhere (mkT insertFn) where
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
+redactBlockStmt patch (BlockStmt stmt) = BlockStmt $ redactStmt patch stmt
+    where redactStmt patch a = a
 redactBlockStmt patch (LocalVars modifiers varType varDecls) =
     LocalVars modifiers varType $ map redactVarDecl varDecls
     where redactVarDecl decl@(VarDecl declId varInit) =
             case varInit of
                 Nothing -> decl
                 Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
+-- technically we should handle this case, but if a toString method has a local anonymous class
+-- then I think we're getting what we deserve
+redactBlockStmt patch c@(LocalClass _) = c
 -- TODO handle other statements
 
 redactBlock :: RedactionPatch -> Block -> Block
