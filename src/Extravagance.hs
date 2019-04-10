@@ -228,7 +228,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (RP redactionPatch) = trace ("Applying Redaction Patch " ++ targetNameR redactionPatch) id -- TODO
+applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch "toString"
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -274,6 +274,9 @@ insertPreHook patch = everywhere (mkT insertFn) where
     patcher m = (modifyMethodStatments . prepender) m m
     cleaner = modifyMethodStatments removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
+
+redactMethod :: RedactionPatch -> String -> CompilationUnit -> CompilationUnit
+redactMethod patch methodName = id
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
 redactBlockStmt patch blockStmt = case blockStmt of
