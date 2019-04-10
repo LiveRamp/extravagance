@@ -309,10 +309,10 @@ redactBlock patch (Block stmts) = Block $ map (redactBlockStmt patch) stmts
 redactExp :: RedactionPatch -> Exp -> Exp
 redactExp patch@(RedactionPatch target) exp = case exp of
     -- direct field accesses
-    fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name))) -> if target == name then Lit $ String "redacted" else fieldAccess
+    fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name))) -> if target == name then redactedExp else fieldAccess
     -- If a field is called some_field, and the reference is just to "some_field"
     -- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
-    expName@(ExpName (Name [Ident name])) -> if target == name then Lit $ String "redacted" else expName
+    expName@(ExpName (Name [Ident name])) -> if target == name then redactedExp else expName
     expName@(ExpName _) -> expName
 
     -- redact constructor calls
@@ -358,3 +358,6 @@ redactVarInit patch init = case init of
 
 redactArrayInit :: RedactionPatch -> ArrayInit -> ArrayInit
 redactArrayInit patch (ArrayInit varInits) = ArrayInit $ map (redactVarInit patch) varInits
+
+redactedExp :: Exp
+redactedExp = Lit $ String "<redacted>"
