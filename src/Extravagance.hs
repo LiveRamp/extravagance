@@ -298,37 +298,12 @@ redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) w
     patchMethod = modifyMethodStatements (redactBlockStmts patch)
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
-redactBlockStmt patch blockStmt = case blockStmt of
-    (BlockStmt stmt) -> BlockStmt $ redactStmt stmt where
-        redactStmt block = case block of
-            (StmtBlock block) -> StmtBlock $ redactBlock patch block
-            (IfThen cond stmt) -> IfThen cond $ redactStmt stmt
-            (IfThenElse cond yes no) -> IfThenElse cond (redactStmt yes) (redactStmt no)
-            (While cond body) -> While cond $ redactStmt body
-            (BasicFor a b c body) -> BasicFor a b c $ redactStmt body
-            (EnhancedFor a b c d body) -> EnhancedFor a b c d $ redactStmt body
-            (ExpStmt exp) -> ExpStmt $ redactExp patch exp
-            (Switch cond blocks) -> Switch cond $ map redactSwitchBlock blocks
-                where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ redactBlockStmts patch stmts
-            (Do stmt cond) -> Do (redactStmt stmt) cond
-            (Return (Just exp)) -> Return $ Just $ redactExp patch exp
-            (Try tryBlock catches maybeFinallyBlock) -> Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
-            (Labeled a stmt) -> Labeled a $ redactStmt stmt
-            _ -> block
-    (LocalVars modifiers varType varDecls) -> LocalVars modifiers varType $ map redactVarDecl varDecls where
-        redactVarDecl decl@(VarDecl declId varInit) =
-            case varInit of
-                Nothing -> decl
-                Just varInit -> VarDecl declId $ Just $ redactVarInit patch varInit
-    -- technically we should handle this case, but if a toString method has a local anonymous class
-    -- then I think we're getting what we deserve
-    c@(LocalClass _) -> c
+redactBlockStmt patch = everywhereBut (mkQ False isComparisonBinOp) (mkT (redactExp patch))
+    where isComparisonBinOp (BinOp lhs op rhs) = op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq]
+          isComparisonBinOp _ = False
 
 redactBlockStmts :: RedactionPatch -> [BlockStmt] -> [BlockStmt]
 redactBlockStmts patch = map (redactBlockStmt patch)
-
-redactBlock :: RedactionPatch -> Block -> Block
-redactBlock patch (Block stmts) = Block $ redactBlockStmts patch stmts
 
 redactExp :: RedactionPatch -> Exp -> Exp
 redactExp patch@(RedactionPatch target) exp = case exp of
@@ -338,47 +313,5 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     -- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
     expName@(ExpName (Name [Ident name])) -> if target == name then redactedExp else expName
     expName@(ExpName _) -> expName
-
-    -- redact constructor calls
-    (InstanceCreation a b args c) -> InstanceCreation a b (redactExps patch args) c
-    (QualInstanceCreation exp a b args c) -> QualInstanceCreation (redactExp patch exp) a b (redactExps patch args) c
-
-    -- redact array creations
-    -- ArrayCreate intentionally not modified (e.g. new int[some_field.length()] would not be changed to new int["redacted".length()])
-    (ArrayCreateInit a b arrayInit) -> ArrayCreateInit a b $ redactArrayInit patch arrayInit
-
-    -- redact method calls
-    (MethodInv call) -> MethodInv $ case call of
-        (MethodCall a args) -> MethodCall a $ redactExps patch args
-        -- this is the one that really matters, since thrift uses sb.append(this.whatever_field)
-        (PrimaryMethodCall exp a b args) -> PrimaryMethodCall exp a b (redactExps patch args)
-        (SuperMethodCall a b args) -> SuperMethodCall a b $ redactExps patch args
-        (ClassMethodCall a b c args) -> ClassMethodCall a b c $ redactExps patch args
-        (TypeMethodCall a b c args) -> TypeMethodCall a b c $ redactExps patch args
-
-    -- redact non-boolean binOps
-    -- i.e. keep things like this.some_field == null
-    binOp@(BinOp lhs op rhs) -> if op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq] then binOp
-        else BinOp (redactExp patch lhs) op (redactExp patch rhs)
-
-    -- other expressions
-    (Cast a exp) -> Cast a $ redactExp patch exp
-    (Cond a yes no) -> Cond a (redactExp patch yes) (redactExp patch no)
-    (Assign lhs op rhs) -> Assign lhs op $ redactExp patch rhs
-    (Lambda params lambdaExpression) -> Lambda params $
-        case lambdaExpression of
-            LambdaExpression exp -> LambdaExpression $ redactExp patch exp
-            LambdaBlock block -> LambdaBlock $ redactBlock patch block
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
-
-redactExps :: RedactionPatch -> [Exp] -> [Exp]
-redactExps patch = map (redactExp patch)
-
-redactVarInit :: RedactionPatch -> VarInit -> VarInit
-redactVarInit patch init = case init of
-    InitExp exp -> InitExp $ redactExp patch exp
-    InitArray arrayInit -> InitArray $ redactArrayInit patch arrayInit
-
-redactArrayInit :: RedactionPatch -> ArrayInit -> ArrayInit
-redactArrayInit patch (ArrayInit varInits) = ArrayInit $ map (redactVarInit patch) varInits
