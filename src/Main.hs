@@ -56,22 +56,12 @@ applicative _ _ = Failed "" undefined
 
 main = do
     [javaPatchPath, jsonPatchPath, srcPath] <- getArgs
-    putStrLn $ "got args: " ++ javaPatchPath ++ jsonPatchPath ++ srcPath
-
     javaPatchFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) javaPatchPath
     let patchCompilationUnits = getCompilationUnitsFromTree javaPatchFiles
-    putStrLn $ "java patches: " ++ show patchCompilationUnits
-
     jsonPatchFiles <- listDirectory jsonPatchPath
-    putStrLn $ "jsonPatchFiles: " ++ show jsonPatchFiles
     jsonFileContents <- mapM (B.readFile . (</>) jsonPatchPath) jsonPatchFiles
-    putStrLn $ "jsonPatchFiles: " ++ show jsonFileContents
     let jsonPatchSet = foldr ((<>) . generateJsonPatchSet) (PatchSet M.empty) jsonFileContents
-    putStrLn $ "jsonPatchSet: " ++ show jsonPatchSet
-
     let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits) <> jsonPatchSet
-    -- let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits)
-
     srcFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) srcPath
     let selectSourceFiles = filterDir (selectTargetedFiles patchSet) (dirTree srcFiles)
     let srcCompilationUnits = foldMaybes $ parseCompilationUnit <$> selectSourceFiles
