@@ -295,16 +295,13 @@ redactMethodMatch m = getIdentString m == "toString" && getParams m == []
 
 redactMethod :: RedactionPatch -> CompilationUnit -> CompilationUnit
 redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) where
-    patchMethod = modifyMethodStatements (redactBlockStmts patch)
+    patchMethod = modifyMethodStatements (map (redactBlockStmt patch))
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
 redactBlockStmt patch = everywhereBut (mkQ False isComparisonBinOp) (mkT (redactExp patch))
     -- we want to leave comparisons untouched (e.g. some_field == null should _not_ be replaced by "<redacted>" == null)
     where isComparisonBinOp (BinOp lhs op rhs) = op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq]
           isComparisonBinOp _ = False
-
-redactBlockStmts :: RedactionPatch -> [BlockStmt] -> [BlockStmt]
-redactBlockStmts patch = map (redactBlockStmt patch)
 
 redactExp :: RedactionPatch -> Exp -> Exp
 redactExp patch@(RedactionPatch target) exp = case exp of
