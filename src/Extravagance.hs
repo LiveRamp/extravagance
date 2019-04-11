@@ -304,7 +304,7 @@ redactMethodMatch m = getIdentString m == "toString" && getParams m == []
 
 redactMethod :: RedactionPatch -> CompilationUnit -> CompilationUnit
 redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) where
-    patchMethod = modifyMethodStatements (map (redactBlockStmt patch))
+    patchMethod = modifyMethodStatements (redactBlockStmts patch)
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
 redactBlockStmt patch blockStmt = case blockStmt of
@@ -318,7 +318,7 @@ redactBlockStmt patch blockStmt = case blockStmt of
             (EnhancedFor a b c d body) -> EnhancedFor a b c d $ redactStmt body
             (ExpStmt exp) -> ExpStmt $ redactExp patch exp
             (Switch cond blocks) -> Switch cond $ map redactSwitchBlock blocks
-                where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ map (redactBlockStmt patch) stmts
+                where redactSwitchBlock (SwitchBlock label stmts) = SwitchBlock label $ redactBlockStmts patch stmts
             (Do stmt cond) -> Do (redactStmt stmt) cond
             (Return (Just exp)) -> Return $ Just $ redactExp patch exp
             (Try tryBlock catches maybeFinallyBlock) -> Try (redactBlock patch tryBlock) catches (redactBlock patch <$> maybeFinallyBlock)
@@ -333,8 +333,11 @@ redactBlockStmt patch blockStmt = case blockStmt of
     -- then I think we're getting what we deserve
     c@(LocalClass _) -> c
 
+redactBlockStmts :: RedactionPatch -> [BlockStmt] -> [BlockStmt]
+redactBlockStmts patch = map (redactBlockStmt patch)
+
 redactBlock :: RedactionPatch -> Block -> Block
-redactBlock patch (Block stmts) = Block $ map (redactBlockStmt patch) stmts
+redactBlock patch (Block stmts) = Block $ redactBlockStmts patch stmts
 
 redactExp :: RedactionPatch -> Exp -> Exp
 redactExp patch@(RedactionPatch target) exp = case exp of
