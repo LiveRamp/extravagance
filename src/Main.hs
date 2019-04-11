@@ -19,6 +19,7 @@ import           Language.Java.Parser
 import           Language.Java.Pretty
 import           Language.Java.Syntax
 import           Replacer
+import           System.FilePath ((</>))
 import           System.Directory
 import           System.Directory.Tree
 import           System.Environment
@@ -54,8 +55,6 @@ applicative (Dir _ fnContents) (Dir name contents) = Dir name (zipWith applicati
 applicative _ _ = Failed "" undefined
 
 main = do
-    let foo = trace "qwer" 5
-    putStrLn "Hello world"
     [javaPatchPath, jsonPatchPath, srcPath] <- getArgs
     putStrLn $ "got args: " ++ javaPatchPath ++ jsonPatchPath ++ srcPath
 
@@ -63,14 +62,15 @@ main = do
     let patchCompilationUnits = getCompilationUnitsFromTree javaPatchFiles
     putStrLn $ "java patches: " ++ show patchCompilationUnits
 
-    -- jsonPatchFiles <- listDirectory jsonPatchPath
-    -- putStrLn $ "jsonPatchFiles: " ++ show jsonPatchFiles
-    -- jsonFileContents <- mapM B.readFile jsonPatchFiles
-    -- putStrLn $ "jsonPatchFiles: " ++ show jsonFileContents
-    -- let jsonPatchSet = foldr ((<>) . generateJsonPatchSet) (PatchSet M.empty) jsonFileContents
+    jsonPatchFiles <- listDirectory jsonPatchPath
+    putStrLn $ "jsonPatchFiles: " ++ show jsonPatchFiles
+    jsonFileContents <- mapM (B.readFile . (</>) jsonPatchPath) jsonPatchFiles
+    putStrLn $ "jsonPatchFiles: " ++ show jsonFileContents
+    let jsonPatchSet = foldr ((<>) . generateJsonPatchSet) (PatchSet M.empty) jsonFileContents
+    putStrLn $ "jsonPatchSet: " ++ show jsonPatchSet
 
-    -- let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits) <> jsonPatchSet
-    let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits)
+    let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits) <> jsonPatchSet
+    -- let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits)
 
     srcFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) srcPath
     let selectSourceFiles = filterDir (selectTargetedFiles patchSet) (dirTree srcFiles)
