@@ -199,24 +199,15 @@ generatePreHookPatch c = PatchSet $ M.singleton targetName (map PreH preHookMeth
     preHookMethods = map (createPreHookInvocation targetName) $ filter isPreHook members
 
 data JsonPatchSet = JsonPatchSet {
-    sensitiveFields :: [SensitiveField]
+    sensitiveFields :: M.Map String [String]
 } deriving (Show, G.Generic)
 instance A.FromJSON JsonPatchSet
 instance A.ToJSON JsonPatchSet
 
-data SensitiveField = SensitiveField {
-    structName :: String,
-    fieldNames :: [String]
-} deriving (Show, G.Generic)
-instance A.FromJSON SensitiveField
-instance A.ToJSON SensitiveField
-
 generateJsonPatchSet :: B.ByteString -> PatchSet
 generateJsonPatchSet fileContents = case (A.eitherDecode fileContents :: Either String JsonPatchSet) of
     Left err -> trace err $ PatchSet M.empty
-    Right (JsonPatchSet sensitiveFieldPatches) -> PatchSet $ foldr (M.unionWith (++) . buildPatchSet) M.empty sensitiveFieldPatches
-    where buildPatchSet :: SensitiveField -> M.Map String [PatchDescription]
-          buildPatchSet (SensitiveField className fieldNames) = M.insert className (foldr ((:) . (RP . RedactionPatch)) [] fieldNames) M.empty
+    Right (JsonPatchSet sensitiveFieldPatches) -> PatchSet $ M.map (map (RP . RedactionPatch)) sensitiveFieldPatches
 
 applyPatchSet :: PatchSet -> CompilationUnit -> CompilationUnit
 applyPatchSet (PatchSet patchMap) c = result where
