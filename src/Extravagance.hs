@@ -299,6 +299,7 @@ redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) w
 
 redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
 redactBlockStmt patch = everywhereBut (mkQ False isComparisonBinOp) (mkT (redactExp patch))
+    -- we want to leave comparisons untouched (e.g. some_field == null should _not_ be replaced by "<redacted>" == null)
     where isComparisonBinOp (BinOp lhs op rhs) = op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq]
           isComparisonBinOp _ = False
 
