@@ -4,6 +4,8 @@
 module Main where
 
 import           Accessors
+import qualified Data.Aeson            as A
+import qualified Data.ByteString.Lazy  as B
 import           Data.Either
 import           Data.Foldable
 import qualified Data.Map.Strict       as M
@@ -17,6 +19,8 @@ import           Language.Java.Parser
 import           Language.Java.Pretty
 import           Language.Java.Syntax
 import           Replacer
+import           System.FilePath ((</>))
+import           System.Directory
 import           System.Directory.Tree
 import           System.Environment
 import           Util
@@ -51,10 +55,13 @@ applicative (Dir _ fnContents) (Dir name contents) = Dir name (zipWith applicati
 applicative _ _ = Failed "" undefined
 
 main = do
-    [patchPath, srcPath] <- getArgs
-    patchFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) patchPath
-    let patchCompilationUnits = getCompilationUnitsFromTree patchFiles
-    let patchSet = mconcat $ map generatePatchSet patchCompilationUnits
+    [javaPatchPath, jsonPatchPath, srcPath] <- getArgs
+    javaPatchFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) javaPatchPath
+    let patchCompilationUnits = getCompilationUnitsFromTree javaPatchFiles
+    jsonPatchFiles <- listDirectory jsonPatchPath
+    jsonFileContents <- mapM (B.readFile . (</>) jsonPatchPath) jsonPatchFiles
+    let jsonPatchSet = foldr ((<>) . generateJsonPatchSet) (PatchSet M.empty) jsonFileContents
+    let patchSet = (mconcat $ map generatePatchSet patchCompilationUnits) <> jsonPatchSet
     srcFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) srcPath
     let selectSourceFiles = filterDir (selectTargetedFiles patchSet) (dirTree srcFiles)
     let srcCompilationUnits = foldMaybes $ parseCompilationUnit <$> selectSourceFiles

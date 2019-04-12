@@ -1,13 +1,17 @@
+{-# LANGUAGE DeriveGeneric #-}
 module Extravagance where
 
 import           Accessors
 import           Util
+import qualified Data.Aeson           as A
+import qualified Data.ByteString.Lazy as B
 import           Data.Data
 import           Data.Generics
 import           Data.List
 import qualified Data.Map.Strict      as M
 import           Data.Maybe
 import           Debug.Trace
+import qualified GHC.Generics         as G
 import           Language.Java.Lexer
 import           Language.Java.Parser
 import           Language.Java.Pretty
@@ -31,7 +35,11 @@ data InterfacePatch = InterfacePatch {
     interfaceToInsert :: ClassType
 } deriving (Show)
 
-data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch deriving (Show)
+data RedactionPatch = RedactionPatch {
+    targetNameR :: String
+} deriving (Show)
+
+data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch | RP RedactionPatch deriving (Show)
 
 newtype PatchSet =  PatchSet (M.Map String [PatchDescription]) deriving (Show)
 
@@ -130,7 +138,7 @@ isPatched m = isPatched' (getModifiers m) where
 
 patchMethod :: String -> MemberDecl -> MemberDecl
 patchMethod sourceName =
-        modifyIf methodHasSelfParam 
+        modifyIf methodHasSelfParam
         (removeNamedParam "self" .
         replaceAllSelfsWithThises .
         addPatchedAnnotation sourceName .
@@ -173,8 +181,8 @@ generateMethodPatch c = PatchSet $ M.singleton targetName [MP methodPatch] where
     members = getMemberDecls c
     patchedMethods = map (patchMethod (getIdentString c)) $ selectMethodsToPatch members
     patchedFields = map patchField $ selectFieldsToPatch members
-    methodPatch = MethodPatch {targetName = targetName, 
-                               methodsToInsert = patchedMethods, 
+    methodPatch = MethodPatch {targetName = targetName,
+                               methodsToInsert = patchedMethods,
                                fieldsToInsert = patchedFields,
                                importsToInsert = imports}
 
@@ -189,6 +197,17 @@ generatePreHookPatch c = PatchSet $ M.singleton targetName (map PreH preHookMeth
     targetName = stripSuffix "Methods" (getIdentString c)
     members = getMemberDecls c
     preHookMethods = map (createPreHookInvocation targetName) $ filter isPreHook members
+
+data JsonPatchSet = JsonPatchSet {
+    sensitiveFields :: M.Map String [String]
+} deriving (Show, G.Generic)
+instance A.FromJSON JsonPatchSet
+instance A.ToJSON JsonPatchSet
+
+generateJsonPatchSet :: B.ByteString -> PatchSet
+generateJsonPatchSet fileContents = case (A.eitherDecode fileContents :: Either String JsonPatchSet) of
+    Left err -> trace err $ PatchSet M.empty
+    Right (JsonPatchSet sensitiveFieldPatches) -> PatchSet $ M.map (map (RP . RedactionPatch)) sensitiveFieldPatches
 
 applyPatchSet :: PatchSet -> CompilationUnit -> CompilationUnit
 applyPatchSet (PatchSet patchMap) c = result where
@@ -215,7 +234,7 @@ combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
 combinePatches patches = foldl (.) id (map applyPatch patches)
 
 applyPatch :: PatchDescription -> CompilationUnit -> CompilationUnit
-applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $ 
+applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
     modifyDeclList appendToDeclarations . appendImports where
         fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
         imports = importsToInsert methodPatch
@@ -224,6 +243,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
+applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -242,8 +262,8 @@ modifyDeclList m = modifyClassBody (gmapT $ mkT m) . modifyEnumBody (gmapT $ mkT
 modifyInterfaces :: ([RefType] -> [RefType]) -> CompilationUnit -> CompilationUnit
 modifyInterfaces m = modifyClass (gmapT $ mkT m)
 
-modifyMethodStatments :: ([BlockStmt] -> [BlockStmt]) -> MemberDecl -> MemberDecl
-modifyMethodStatments fn (MethodDecl a b c d e f g (MethodBody (Just (Block stmts)))) =
+modifyMethodStatements :: ([BlockStmt] -> [BlockStmt]) -> MemberDecl -> MemberDecl
+modifyMethodStatements fn (MethodDecl a b c d e f g (MethodBody (Just (Block stmts)))) =
     MethodDecl a b c d e f g (MethodBody (Just (Block (fn stmts))))
 
 makeMethodCall :: MemberDecl -> MemberDecl -> BlockStmt
@@ -266,8 +286,30 @@ insertPreHook :: PreHookPatch -> CompilationUnit -> CompilationUnit
 insertPreHook patch = everywhere (mkT insertFn) where
     stmtMaker = makeMethodCall (hookCall patch)
     prepender m b = stmtMaker m : b
-    patcher m = (modifyMethodStatments . prepender) m m
-    cleaner = modifyMethodStatments removeExistingPrehook
+    patcher m = (modifyMethodStatements . prepender) m m
+    cleaner = modifyMethodStatements removeExistingPrehook
     insertFn = modifyIf (preHookMatch patch) (patcher . cleaner)
 
+redactMethodMatch :: MemberDecl -> Bool
+redactMethodMatch m = getIdentString m == "toString" && getParams m == []
 
+redactMethod :: RedactionPatch -> CompilationUnit -> CompilationUnit
+redactMethod patch = everywhere (mkT $ modifyIf redactMethodMatch patchMethod) where
+    patchMethod = modifyMethodStatements (map (redactBlockStmt patch))
+
+redactBlockStmt :: RedactionPatch -> BlockStmt -> BlockStmt
+redactBlockStmt patch = everywhereBut (mkQ False isComparisonBinOp) (mkT (redactExp patch))
+    -- we want to leave comparisons untouched (e.g. some_field == null should _not_ be replaced by "<redacted>" == null)
+    where isComparisonBinOp (BinOp lhs op rhs) = op `elem` [LThan, GThan, LThanE, GThanE, Equal, NotEq]
+          isComparisonBinOp _ = False
+
+redactExp :: RedactionPatch -> Exp -> Exp
+redactExp patch@(RedactionPatch target) exp = case exp of
+    -- direct field accesses
+    fieldAccess@(FieldAccess (PrimaryFieldAccess exp (Ident name))) -> if target == name then redactedExp else fieldAccess
+    -- If a field is called some_field, and the reference is just to "some_field"
+    -- and not "this.some_field", it is parsed as an ExpName rather than a FieldAccess
+    expName@(ExpName (Name [Ident name])) -> if target == name then redactedExp else expName
+    expName@(ExpName _) -> expName
+    _ -> exp
+    where redactedExp = Lit $ String "<redacted>"
