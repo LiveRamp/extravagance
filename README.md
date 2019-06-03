@@ -35,4 +35,6 @@ extravagance \
 
 ## Building
 
-In theory, you should be able to just run `bin/build-docker` to produce a Docker image locally.
+First, run `stack docker pull` to download the docker image used to run the compilation process. In theory, you should now be able to just run `bin/build-docker` to produce a Docker image locally. The process may randomly crash, possibly due to running out of memory. You should be able to restart it and it will continue where it left off.
+
+To build a binary for your development system, simply run `stack build .`.
