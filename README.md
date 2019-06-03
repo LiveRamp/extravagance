@@ -4,6 +4,7 @@
    1. [Usage](#usage)
       1. [Docker](#docker)
       1. [Binary](#binary)
+   1. [Building](#building)
 
 ## Usage
 
@@ -31,3 +32,7 @@ extravagance \
     /users/svc-jenkins/code/dist_types/src/main/json/ \
     /users/svc-jenkins/code/dist_types/src/main/generated
 ```
+
+## Building
+
+In theory, you should be able to just run `bin/build-docker` to produce a Docker image locally.
