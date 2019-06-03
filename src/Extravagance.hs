@@ -41,6 +41,8 @@ data RedactionPatch = RedactionPatch {
 
 data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch | RP RedactionPatch deriving (Show)
 
+-- A Map from class name to the patches that should be applied to that class
+-- Class name should be unqualified (e.g. "String", not "java.lang.String")
 newtype PatchSet =  PatchSet (M.Map String [PatchDescription]) deriving (Show)
 
 instance Semigroup PatchSet where
@@ -313,3 +315,14 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     expName@(ExpName _) -> expName
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
+
+redactClass :: RedactionPatch -> CompilationUnit -> CompilationUnit
+redactClass patch = everywhere (mkT $ modifyIf redactClassMatch patchMethod) where
+    patchMethod = redactClassDecl patch
+
+redactClassMatch :: ClassDecl -> Bool
+redactClassMatch _ = True
+
+redactClassDecl :: RedactionPatch -> ClassDecl -> ClassDecl
+redactClassDecl patch c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org.apache.thrift.TUnion", _)]))) _ _) = 0
+redactClassDecl patch c = redactMethod patch c
