@@ -245,7 +245,7 @@ applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName met
 applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch
+applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) (redactMethod redactionPatch . redactUnion redactionPatch)
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -316,13 +316,10 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
 
-redactClass :: RedactionPatch -> CompilationUnit -> CompilationUnit
-redactClass patch = everywhere (mkT $ modifyIf redactClassMatch patchMethod) where
-    patchMethod = redactClassDecl patch
+redactUnion :: RedactionPatch -> CompilationUnit -> CompilationUnit
+redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
+    patchMethod = id
 
-redactClassMatch :: ClassDecl -> Bool
-redactClassMatch _ = True
-
-redactClassDecl :: RedactionPatch -> ClassDecl -> ClassDecl
-redactClassDecl patch c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org.apache.thrift.TUnion", _)]))) _ _) = 0
-redactClassDecl patch c = redactMethod patch c
+isUnion :: ClassDecl -> Bool
+isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org.apache.thrift.TUnion", _)]))) _ _) = True
+isUnion c = False
