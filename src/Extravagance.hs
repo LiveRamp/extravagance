@@ -343,5 +343,7 @@ containsSensitiveFieldList c = case listify (mkT isSensitiveFieldList) of
     _ -> False
 
 isSensitiveFieldList :: MemberDecl -> Bool
+isSensitiveFieldList (FieldDecl _ _ [(VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")))]) = True
+isSensitiveFieldList _ = False
 
 insertUnionRedactingToString :: ClassDecl -> ClassDecl
