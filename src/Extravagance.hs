@@ -327,38 +327,36 @@ redactUnion :: RedactionPatch -> CompilationUnit -> CompilationUnit
 redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
     patchMethod = insertOrUpdateSensitiveFieldList tmpSensitiveFieldsDecl patch . insertMemberIntoClass tmpOverrideToStringDecl
 
-isUnion :: ClassDecl -> Bool
-isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
-isUnion _ = False
+isUnion :: CompilationUnit -> Bool
+isUnion c = case listify isUnionClassDecl c of
+    (_:_) -> True
+    _ -> False
+    where isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
+          isUnionClassDecl _ = False
 
-insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> ClassDecl -> ClassDecl
-insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch classDecl where
-    classDecl =
-        if containsSensitiveFieldList decl
-        then decl
-        else insertMemberIntoClass sensitiveFieldListAst decl
+-- TODO use modifyDeclList
+insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch $ modifyIf (missingSensitiveFieldList) (insertMemberIntoClass sensitiveFieldListAst) decl
 
-updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
-updateSensitiveFieldList (RedactionPatch fieldName) = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
-    doEdit :: MemberDecl  -> MemberDecl
-    doEdit = everywhere (mkT $ insertArgToMethodCall newArg) where
+updateSensitiveFieldList :: RedactionPatch -> CompilationUnit -> CompilationUnit
+updateSensitiveFieldList (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
+    doEdit = modifyIf isSensitiveFieldList $ everywhere (mkT $ insertArgToMethodCall newArg) where
         -- The _Fields name is always the union field name uppercased
         -- e.g. foo_bar -> _Fields.FOO_BAR
         newArg = ExpName (Name [Ident "_Fields",Ident (map C.toUpper fieldName)])
-        insertArgToMethodCall :: Argument -> MethodInvocation -> MethodInvocation
         insertArgToMethodCall arg (MethodCall a args) = MethodCall a (arg:args)
 
-insertMemberIntoClass :: MemberDecl -> ClassDecl -> ClassDecl
-insertMemberIntoClass newMember (ClassDecl a b c d e (ClassBody decls)) = ClassDecl a b c d e (ClassBody (MemberDecl newMember:decls))
+insertMemberIntoClass :: MemberDecl -> CompilationUnit -> CompilationUnit
+insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
 
 -- return True iff the class contains a sensitive field list MemberDecl
-containsSensitiveFieldList :: ClassDecl -> Bool
-containsSensitiveFieldList c = case listify isSensitiveFieldList c of
-    (_:_) -> True
-    _ -> False
+missingSensitiveFieldList :: CompilationUnit -> Bool
+missingSensitiveFieldList c = case listify isSensitiveFieldList c of
+    (_:_) -> False
+    _ -> True
 
 -- TODO This probably should accept the MemberDecl sensitiveFieldsDeclaration
 -- and parse out the field name from it, rather than hardcoding the name
-isSensitiveFieldList :: MemberDecl -> Bool
-isSensitiveFieldList (FieldDecl _ _ [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _]) = True
+isSensitiveFieldList :: Decl -> Bool
+isSensitiveFieldList (MemberDecl (FieldDecl _ _ [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _])) = True
 isSensitiveFieldList _ = False
