@@ -332,10 +332,11 @@ isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (I
 isUnion _ = False
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> ClassDecl -> ClassDecl
-insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl =
-    if containsSensitiveFieldList decl
-    then updateSensitiveFieldList patch decl
-    else updateSensitiveFieldList patch $ insertMemberIntoClass sensitiveFieldListAst decl
+insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch classDecl where
+    classDecl =
+        if containsSensitiveFieldList decl
+        then decl
+        else insertMemberIntoClass sensitiveFieldListAst decl
 
 updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
 updateSensitiveFieldList (RedactionPatch fieldName) = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
