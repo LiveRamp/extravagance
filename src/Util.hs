@@ -1,5 +1,7 @@
 module Util where
 
+import Data.Generics
+
 (.&&) :: (a -> Bool) -> (a -> Bool) -> (a -> Bool)
 (.&&) p1 p2 a = p1 a && p2 a
 
@@ -10,3 +12,8 @@ stripSuffix suffix [] = []
 
 modifyIf :: (a -> Bool) -> (a -> a) -> a -> a
 modifyIf pred trans a = if pred a then trans a else a
+
+hasAny :: (Data a, Typeable r) => (r -> Bool) -> a -> Bool
+hasAny filter obj = case listify filter obj of
+  (_:_) -> True
+  _ -> False

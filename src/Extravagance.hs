@@ -328,11 +328,9 @@ redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
     patchMethod = insertOrUpdateSensitiveFieldList tmpSensitiveFieldsDecl patch . insertMemberIntoClass tmpOverrideToStringDecl
 
 isUnion :: CompilationUnit -> Bool
-isUnion c = case listify isUnionClassDecl c of
-    (_:_) -> True
-    _ -> False
-    where isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
-          isUnionClassDecl _ = False
+isUnion = hasAny isUnionClassDecl where
+    isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
+    isUnionClassDecl _ = False
 
 -- TODO use modifyDeclList
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
@@ -351,9 +349,7 @@ insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
 
 -- return True iff the class contains a sensitive field list MemberDecl
 missingSensitiveFieldList :: CompilationUnit -> Bool
-missingSensitiveFieldList c = case listify isSensitiveFieldList c of
-    (_:_) -> False
-    _ -> True
+missingSensitiveFieldList c = not $ hasAny isSensitiveFieldList c
 
 -- TODO This probably should accept the MemberDecl sensitiveFieldsDeclaration
 -- and parse out the field name from it, rather than hardcoding the name
