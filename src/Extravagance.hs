@@ -329,7 +329,7 @@ redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
 
 isUnion :: ClassDecl -> Bool
 isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
-isUnion c = False
+isUnion _ = False
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> ClassDecl -> ClassDecl
 insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl =
