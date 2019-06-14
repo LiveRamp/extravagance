@@ -5,6 +5,7 @@ import           Accessors
 import           Util
 import qualified Data.Aeson           as A
 import qualified Data.ByteString.Lazy as B
+import qualified Data.Char            as C
 import           Data.Data
 import           Data.Generics
 import           Data.List
@@ -316,9 +317,9 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
 
+-- TODO remove these declarations
 tmpOverrideToStringDecl :: MemberDecl
 tmpOverrideToStringDecl = MethodDecl [] [] (Just (RefType (ClassRefType (ClassType [(Ident "String", [])])))) (Ident "toString") [] [] Nothing (MethodBody Nothing)
-
 tmpSensitiveFieldsDecl :: MemberDecl
 tmpSensitiveFieldsDecl = FieldDecl [] (RefType (ClassRefType (ClassType [(Ident "java", []), (Ident "util", []), (Ident "Set", [])]))) [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) Nothing]
 
@@ -337,9 +338,14 @@ insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl =
     else updateSensitiveFieldList patch $ insertMemberIntoClass sensitiveFieldListAst decl
 
 updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
-updateSensitiveFieldList patch = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
+updateSensitiveFieldList (RedactionPatch fieldName) = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
     doEdit :: MemberDecl  -> MemberDecl
-    doEdit = id -- TODO
+    doEdit = everywhere (mkT $ insertArgToMethodCall newArg) where
+        -- The _Fields name is always the union field name uppercased
+        -- e.g. foo_bar -> _Fields.FOO_BAR
+        newArg = ExpName (Name [Ident "_Fields",Ident (map C.toUpper fieldName)])
+        insertArgToMethodCall :: Argument -> MethodInvocation -> MethodInvocation
+        insertArgToMethodCall arg (MethodCall a args) = MethodCall a (arg:args)
 
 insertMemberIntoClass :: MemberDecl -> ClassDecl -> ClassDecl
 insertMemberIntoClass newMember (ClassDecl a b c d e (ClassBody decls)) = ClassDecl a b c d e (ClassBody (MemberDecl newMember:decls))
@@ -350,6 +356,8 @@ containsSensitiveFieldList c = case listify isSensitiveFieldList c of
     (_:_) -> True
     _ -> False
 
+-- TODO This probably should accept the MemberDecl sensitiveFieldsDeclaration
+-- and parse out the field name from it, rather than hardcoding the name
 isSensitiveFieldList :: MemberDecl -> Bool
 isSensitiveFieldList (FieldDecl _ _ [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _]) = True
 isSensitiveFieldList _ = False
