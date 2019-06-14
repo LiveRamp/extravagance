@@ -342,7 +342,7 @@ updateSensitiveFieldList patch = everywhere (mkT $ modifyIf isSensitiveFieldList
     doEdit = id -- TODO
 
 insertSensitiveFieldList :: MemberDecl -> ClassDecl -> ClassDecl
-insertSensitiveFieldList _ a = a -- TODO
+insertSensitiveFieldList fieldListDecl (ClassDecl a b c d e (ClassBody decls)) = ClassDecl a b c d e (ClassBody (MemberDecl fieldListDecl:decls))
 
 -- return True iff the class contains a sensitive field list MemberDecl
 containsSensitiveFieldList :: ClassDecl -> Bool
