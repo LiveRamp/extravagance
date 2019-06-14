@@ -336,7 +336,7 @@ isUnion c = case listify isUnionClassDecl c of
 
 -- TODO use modifyDeclList
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
-insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch $ modifyIf (missingSensitiveFieldList) (insertMemberIntoClass sensitiveFieldListAst) decl
+insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch $ modifyIf missingSensitiveFieldList (insertMemberIntoClass sensitiveFieldListAst) decl
 
 updateSensitiveFieldList :: RedactionPatch -> CompilationUnit -> CompilationUnit
 updateSensitiveFieldList (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
