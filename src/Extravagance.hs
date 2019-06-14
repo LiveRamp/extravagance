@@ -336,7 +336,11 @@ updateSensitiveFieldList patch c = everywhere (mkT $ modifyIf isSensitiveFieldLi
 
 insertSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
 
+-- return True iff the class contains a sensitive field list MemberDecl
 containsSensitiveFieldList :: ClassDecl -> Bool
+containsSensitiveFieldList c = case listify (mkT isSensitiveFieldList) of
+    (_:_) -> True
+    _ -> False
 
 isSensitiveFieldList :: MemberDecl -> Bool
 
