@@ -318,8 +318,22 @@ redactExp patch@(RedactionPatch target) exp = case exp of
 
 redactUnion :: RedactionPatch -> CompilationUnit -> CompilationUnit
 redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
-    patchMethod = id
+    patchMethod = (insertOrUpdateSensitiveFieldList patch) . insertUnionRedactingToString
 
 isUnion :: ClassDecl -> Bool
 isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org.apache.thrift.TUnion", _)]))) _ _) = True
 isUnion c = False
+
+insertOrUpdateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
+insertOrUpdateSensitiveFieldList patch decl =
+    if containsSensitiveFieldList decl
+    then updateSensitiveFieldList patch decl
+    else insertSensitiveFieldList patch decl
+
+updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
+
+insertSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
+
+containsSensitiveFieldList :: ClassDecl -> Bool
+
+insertUnionRedactingToString :: ClassDecl -> ClassDecl
