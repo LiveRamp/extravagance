@@ -331,9 +331,13 @@ insertOrUpdateSensitiveFieldList patch decl =
     else insertSensitiveFieldList patch decl
 
 updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
+updateSensitiveFieldList patch c = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
+    doEdit :: MemberDecl  -> MemberDecl
 
 insertSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
 
 containsSensitiveFieldList :: ClassDecl -> Bool
+
+isSensitiveFieldList :: MemberDecl -> Bool
 
 insertUnionRedactingToString :: ClassDecl -> ClassDecl
