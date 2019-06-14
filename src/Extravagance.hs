@@ -324,7 +324,7 @@ tmpSensitiveFieldsDecl = FieldDecl [] (RefType (ClassRefType (ClassType [(Ident 
 
 redactUnion :: RedactionPatch -> CompilationUnit -> CompilationUnit
 redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
-    patchMethod = (insertOrUpdateSensitiveFieldList tmpSensitiveFieldsDecl patch) . insertUnionRedactingToString
+    patchMethod = insertOrUpdateSensitiveFieldList tmpSensitiveFieldsDecl patch . insertUnionRedactingToString tmpOverrideToStringDecl
 
 isUnion :: ClassDecl -> Bool
 isUnion c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
@@ -339,10 +339,10 @@ insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl =
 updateSensitiveFieldList :: RedactionPatch -> ClassDecl -> ClassDecl
 updateSensitiveFieldList patch = everywhere (mkT $ modifyIf isSensitiveFieldList doEdit) where
     doEdit :: MemberDecl  -> MemberDecl
-    doEdit = id
+    doEdit = id -- TODO
 
 insertSensitiveFieldList :: MemberDecl -> ClassDecl -> ClassDecl
-insertSensitiveFieldList _ a = a
+insertSensitiveFieldList _ a = a -- TODO
 
 -- return True iff the class contains a sensitive field list MemberDecl
 containsSensitiveFieldList :: ClassDecl -> Bool
@@ -351,11 +351,11 @@ containsSensitiveFieldList c = case listify isSensitiveFieldList c of
     _ -> False
 
 isSensitiveFieldList :: MemberDecl -> Bool
-isSensitiveFieldList (FieldDecl _ _ [(VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _)]) = True
+isSensitiveFieldList (FieldDecl _ _ [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _]) = True
 isSensitiveFieldList _ = False
 
-insertUnionRedactingToString :: ClassDecl -> ClassDecl
-insertUnionRedactingToString = id
+insertUnionRedactingToString :: MemberDecl -> ClassDecl -> ClassDecl
+insertUnionRedactingToString _ a = a -- TODO
 
 insertMemberDecl :: MemberDecl -> ClassDecl -> ClassDecl
-insertMemberDecl _ a = a
+insertMemberDecl _ a = a -- TODO
