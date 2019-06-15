@@ -332,7 +332,7 @@ isUnion = hasAny isUnionClassDecl where
     isUnionClassDecl _ = False
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
-insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList sensitiveFieldListAst patch $ modifyIf (missingSensitiveFieldList sensitiveFieldListAst) (insertMemberIntoClass sensitiveFieldListAst) decl
+insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch decl = updateSensitiveFieldList sensitiveFieldsDecl patch $ modifyIf (missingSensitiveFieldList sensitiveFieldsDecl) (insertMemberIntoClass sensitiveFieldsDecl) decl
 
 updateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 updateSensitiveFieldList sensitiveFieldsDecl (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
@@ -350,11 +350,11 @@ missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
 missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
-isSensitiveFieldList sensitiveFieldDecl decl = containsSensitiveVarId where
-    varId = fromMaybe (trace "WTF?" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldDecl
+isSensitiveFieldList sensitiveFieldsDecl decl = containsSensitiveVarId where
+    varId = fromMaybe (trace "WTF?" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldsDecl
     getVarId (VarId (Ident ident)) = Just ident
-    isSensitiveVarId (VarId (Ident ident))
+    isSensitiveFieldsVarId (VarId (Ident ident))
         | ident == varId = True
         | otherwise = False
-    isSensitiveVarId _ = False
-    containsSensitiveVarId = hasAny isSensitiveVarId decl
+    isSensitiveFieldsVarId _ = False
+    containsSensitiveVarId = hasAny isSensitiveFieldsVarId decl
