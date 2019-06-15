@@ -6,12 +6,12 @@ class Foo {
     sb.append(" ");
 
     if (getSetField() != null) {
-      Object v = sensitiveFields.contains(this.getSetField()) ? "redacted" : this.getFieldValue();
+      Object v = EXTRAVAGANCE_SENSITIVE_FIELDS.contains(this.getSetField()) ? "redacted" : this.getFieldValue();
 
       sb.append(getFieldDesc(getSetField()).name);
       sb.append(":");
-      if(v instanceof ByteBuffer) {
-        TBaseHelper.toString((ByteBuffer)v, sb);
+      if(v instanceof java.nio.ByteBuffer) {
+        org.apache.thrift.TBaseHelper.toString((java.nio.ByteBuffer)v, sb);
       } else {
         sb.append(v.toString());
       }
