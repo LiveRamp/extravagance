@@ -54,13 +54,13 @@ applicative (File _ fn) (File name contents) = File name (fn contents)
 applicative (Dir _ fnContents) (Dir name contents) = Dir name (zipWith applicative fnContents contents)
 applicative _ _ = Failed "" undefined
 
--- TODO remove
-tmpSensitiveFieldsDecl :: MemberDecl
-tmpSensitiveFieldsDecl = FieldDecl [] (RefType (ClassRefType (ClassType [(Ident "java", []), (Ident "util", []), (Ident "Set", [])]))) [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) Nothing]
-tmpOverrideToStringDecl :: MemberDecl
-tmpOverrideToStringDecl = MethodDecl [] [] (Just (RefType (ClassRefType (ClassType [(Ident "String", [])])))) (Ident "toString") [] [] Nothing (MethodBody Nothing)
-
 main = do
+    sensitiveFieldsDeclString <- readFile "resources/redaction/TUnion/sensitiveFieldsDeclaration.java"
+    redactingToStringDeclString <- readFile "resources/redaction/TUnion/redactingToString.java"
+
+    let sensitiveFieldsDecl = parseMemberDecl sensitiveFieldsDeclString
+    let redactingToStringDecl = parseMemberDecl redactingToStringDeclString
+
     [javaPatchPath, jsonPatchPath, srcPath] <- getArgs
     javaPatchFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) javaPatchPath
     let patchCompilationUnits = getCompilationUnitsFromTree javaPatchFiles
@@ -71,7 +71,7 @@ main = do
     srcFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) srcPath
     let selectSourceFiles = filterDir (selectTargetedFiles patchSet) (dirTree srcFiles)
     let srcCompilationUnits = foldMaybes $ parseCompilationUnit <$> selectSourceFiles
-    let patchFunction = applyPatchSet (Resources tmpSensitiveFieldsDecl tmpOverrideToStringDecl) patchSet
+    let patchFunction = applyPatchSet (Resources sensitiveFieldsDecl redactingToStringDecl) patchSet
     let patchedSrcUnits = fmap (prettyPrint . patchFunction) srcCompilationUnits
     let repairedPatchedSrcUnits = merge replaceMatchingStrings selectSourceFiles patchedSrcUnits
     writeDirectoryWith (\f s -> TIO.writeFile f (T.pack s)) (anchor srcFiles :/ repairedPatchedSrcUnits)

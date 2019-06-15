@@ -241,6 +241,12 @@ data Resources = Resources {
   redactingToStringDecl :: MemberDecl
 }
 
+parseMemberDecl :: String -> MemberDecl
+parseMemberDecl string = case parser compilationUnit string of
+    Right decl -> case getMember decl of
+        Just d -> d
+        where getMember = something (mkQ Nothing (\x -> Just (x :: MemberDecl)))
+
 applyPatch :: Resources -> PatchDescription -> CompilationUnit -> CompilationUnit
 applyPatch _ (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
     modifyDeclList appendToDeclarations . appendImports where
@@ -356,11 +362,10 @@ missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
 missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
-isSensitiveFieldList sensitiveFieldsDecl decl = containsSensitiveVarId where
+isSensitiveFieldList sensitiveFieldsDecl decl = hasAny isSensitiveFieldsVarId decl where
     varId = fromMaybe (trace "Failed to parse sensitive field declaration - this is a bug; please notify the maintainer(s)" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldsDecl
     getVarId (VarId (Ident ident)) = Just ident
     isSensitiveFieldsVarId (VarId (Ident ident))
         | ident == varId = True
         | otherwise = False
     isSensitiveFieldsVarId _ = False
-    containsSensitiveVarId = hasAny isSensitiveFieldsVarId decl
