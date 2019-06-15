@@ -6,7 +6,7 @@ class Foo {
     sb.append(" ");
 
     if (getSetField() != null) {
-      Object v = EXTRAVAGANCE_SENSITIVE_FIELDS.contains(this.getSetField()) ? "redacted" : this.getFieldValue();
+      Object v = EXTRAVAGANCE_SENSITIVE_FIELDS.contains(this.getSetField()) ? "<redacted>" : this.getFieldValue();
 
       sb.append(getFieldDesc(getSetField()).name);
       sb.append(":");
