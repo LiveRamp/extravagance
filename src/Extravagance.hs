@@ -332,13 +332,12 @@ isUnion = hasAny isUnionClassDecl where
     isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
     isUnionClassDecl _ = False
 
--- TODO use modifyDeclList
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch $ modifyIf missingSensitiveFieldList (insertMemberIntoClass sensitiveFieldListAst) decl
 
 updateSensitiveFieldList :: RedactionPatch -> CompilationUnit -> CompilationUnit
 updateSensitiveFieldList (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
-    doEdit = modifyIf isSensitiveFieldList $ everywhere (mkT $ insertArgToMethodCall newArg) where
+    doEdit = modifyIf (isSensitiveFieldList tmpSensitiveFieldsDecl) $ everywhere (mkT $ insertArgToMethodCall newArg) where
         -- The _Fields name is always the union field name uppercased
         -- e.g. foo_bar -> _Fields.FOO_BAR
         newArg = ExpName (Name [Ident "_Fields",Ident (map C.toUpper fieldName)])
@@ -349,10 +348,14 @@ insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
 
 -- return True iff the class contains a sensitive field list MemberDecl
 missingSensitiveFieldList :: CompilationUnit -> Bool
-missingSensitiveFieldList c = not $ hasAny isSensitiveFieldList c
+missingSensitiveFieldList c = not $ hasAny (isSensitiveFieldList tmpSensitiveFieldsDecl) c
 
--- TODO This probably should accept the MemberDecl sensitiveFieldsDeclaration
--- and parse out the field name from it, rather than hardcoding the name
-isSensitiveFieldList :: Decl -> Bool
-isSensitiveFieldList (MemberDecl (FieldDecl _ _ [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) _])) = True
-isSensitiveFieldList _ = False
+isSensitiveFieldList :: MemberDecl -> Decl -> Bool
+isSensitiveFieldList sensitiveFieldDecl decl = containsSensitiveVarId where
+    varId = fromMaybe (trace "WTF?" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldDecl
+    getVarId (VarId (Ident ident)) = Just ident
+    isSensitiveVarId (VarId (Ident ident))
+        | ident == varId = True
+        | otherwise = False
+    isSensitiveVarId _ = False
+    containsSensitiveVarId = hasAny isSensitiveVarId decl
