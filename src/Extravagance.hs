@@ -212,9 +212,9 @@ generateJsonPatchSet fileContents = case (A.eitherDecode fileContents :: Either 
     Left err -> trace err $ PatchSet M.empty
     Right (JsonPatchSet sensitiveFieldPatches) -> PatchSet $ M.map (map (RP . RedactionPatch)) sensitiveFieldPatches
 
-applyPatchSet :: PatchSet -> CompilationUnit -> CompilationUnit
-applyPatchSet (PatchSet patchMap) c = result where
-    patchFn = combinePatches <$> M.lookup (getIdentString c) patchMap
+applyPatchSet :: Resources -> PatchSet -> CompilationUnit -> CompilationUnit
+applyPatchSet r (PatchSet patchMap) c = result where
+    patchFn = combinePatches r <$> M.lookup (getIdentString c) patchMap
     patchedUnit = patchFn <*> pure c
     result = fromMaybe c patchedUnit
 
@@ -233,20 +233,25 @@ overwriteTail item ls = if identNotIn item ls then ls ++ [item] else ls
 (*++) :: Identified a => [a] -> [a] -> [a]
 (*++) first = foldl (.) id (map overwriteHead first)
 
-combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
-combinePatches patches = foldl (.) id (map applyPatch patches)
+combinePatches :: Resources -> [PatchDescription] -> CompilationUnit -> CompilationUnit
+combinePatches r patches = foldl (.) id (map (applyPatch r) patches)
 
-applyPatch :: PatchDescription -> CompilationUnit -> CompilationUnit
-applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
+data Resources = Resources {
+  sensitiveFieldDecl :: MemberDecl,
+  redactingToStringDecl :: MemberDecl
+}
+
+applyPatch :: Resources -> PatchDescription -> CompilationUnit -> CompilationUnit
+applyPatch _ (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
     modifyDeclList appendToDeclarations . appendImports where
         fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
         imports = importsToInsert methodPatch
         appendToDeclarations decls = (patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls
         appendImports (CompilationUnit package existingImports body ) = CompilationUnit package (imports ++* existingImports) body
-applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
+applyPatch _ (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
-applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) (redactMethod redactionPatch . redactUnion redactionPatch)
+applyPatch _ (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
+applyPatch (Resources sensitiveFieldDecl redactingToStringDecl) (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) (redactMethod redactionPatch . redactUnion sensitiveFieldDecl redactingToStringDecl redactionPatch)
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -317,15 +322,9 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
 
--- TODO remove these declarations
-tmpOverrideToStringDecl :: MemberDecl
-tmpOverrideToStringDecl = MethodDecl [] [] (Just (RefType (ClassRefType (ClassType [(Ident "String", [])])))) (Ident "toString") [] [] Nothing (MethodBody Nothing)
-tmpSensitiveFieldsDecl :: MemberDecl
-tmpSensitiveFieldsDecl = FieldDecl [] (RefType (ClassRefType (ClassType [(Ident "java", []), (Ident "util", []), (Ident "Set", [])]))) [VarDecl (VarId (Ident "EXTRAVAGANCE_SENSITIVE_FIELDS")) Nothing]
-
-redactUnion :: RedactionPatch -> CompilationUnit -> CompilationUnit
-redactUnion patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
-    patchMethod = insertOrUpdateSensitiveFieldList tmpSensitiveFieldsDecl patch . insertMemberIntoClass tmpOverrideToStringDecl
+redactUnion :: MemberDecl -> MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+redactUnion sensitiveFieldsDecl redactingToStringDecl patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
+    patchMethod = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertMemberIntoClass redactingToStringDecl
 
 isUnion :: CompilationUnit -> Bool
 isUnion = hasAny isUnionClassDecl where
@@ -333,11 +332,11 @@ isUnion = hasAny isUnionClassDecl where
     isUnionClassDecl _ = False
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
-insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList patch $ modifyIf missingSensitiveFieldList (insertMemberIntoClass sensitiveFieldListAst) decl
+insertOrUpdateSensitiveFieldList sensitiveFieldListAst patch decl = updateSensitiveFieldList sensitiveFieldListAst patch $ modifyIf (missingSensitiveFieldList sensitiveFieldListAst) (insertMemberIntoClass sensitiveFieldListAst) decl
 
-updateSensitiveFieldList :: RedactionPatch -> CompilationUnit -> CompilationUnit
-updateSensitiveFieldList (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
-    doEdit = modifyIf (isSensitiveFieldList tmpSensitiveFieldsDecl) $ everywhere (mkT $ insertArgToMethodCall newArg) where
+updateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+updateSensitiveFieldList sensitiveFieldsDecl (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
+    doEdit = modifyIf (isSensitiveFieldList sensitiveFieldsDecl) $ everywhere (mkT $ insertArgToMethodCall newArg) where
         -- The _Fields name is always the union field name uppercased
         -- e.g. foo_bar -> _Fields.FOO_BAR
         newArg = ExpName (Name [Ident "_Fields",Ident (map C.toUpper fieldName)])
@@ -347,8 +346,8 @@ insertMemberIntoClass :: MemberDecl -> CompilationUnit -> CompilationUnit
 insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
 
 -- return True iff the class contains a sensitive field list MemberDecl
-missingSensitiveFieldList :: CompilationUnit -> Bool
-missingSensitiveFieldList c = not $ hasAny (isSensitiveFieldList tmpSensitiveFieldsDecl) c
+missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
+missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
 isSensitiveFieldList sensitiveFieldDecl decl = containsSensitiveVarId where
