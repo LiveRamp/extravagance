@@ -324,12 +324,18 @@ redactExp patch@(RedactionPatch target) exp = case exp of
 
 redactUnion :: MemberDecl -> MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 redactUnion sensitiveFieldsDecl redactingToStringDecl patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
-    patchMethod = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertMemberIntoClass redactingToStringDecl
+    patchMethod = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertRedactingToStringIfNeeded redactingToStringDecl
 
 isUnion :: CompilationUnit -> Bool
 isUnion = hasAny isUnionClassDecl where
     isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
     isUnionClassDecl _ = False
+
+insertRedactingToStringIfNeeded :: MemberDecl -> CompilationUnit -> CompilationUnit
+insertRedactingToStringIfNeeded redactingToStringDecl = modifyIf toStringNotPresent (insertMemberIntoClass redactingToStringDecl) where
+    isToStringDecl (MethodDecl _ _ _ (Ident "toString") _ _ _ _) = True
+    isToStringDecl _ = False
+    toStringNotPresent = not . hasAny isToStringDecl
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch decl = updateSensitiveFieldList sensitiveFieldsDecl patch $ modifyIf (missingSensitiveFieldList sensitiveFieldsDecl) (insertMemberIntoClass sensitiveFieldsDecl) decl
