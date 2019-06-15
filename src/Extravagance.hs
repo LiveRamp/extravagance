@@ -357,7 +357,7 @@ missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveField
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
 isSensitiveFieldList sensitiveFieldsDecl decl = containsSensitiveVarId where
-    varId = fromMaybe (trace "WTF?" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldsDecl
+    varId = fromMaybe (trace "Failed to parse sensitive field declaration - this is a bug; please notify the maintainer(s)" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldsDecl
     getVarId (VarId (Ident ident)) = Just ident
     isSensitiveFieldsVarId (VarId (Ident ident))
         | ident == varId = True
