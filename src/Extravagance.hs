@@ -334,7 +334,7 @@ redactUnion sensitiveFieldsDecl redactingToStringDecl patch = everywhere (mkT $ 
 
 isUnion :: CompilationUnit -> Bool
 isUnion = hasAny isUnionClassDecl where
-    isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", [])]))) _ _) = True
+    isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", _)]))) _ _) = True
     isUnionClassDecl _ = False
 
 insertRedactingToStringIfNeeded :: MemberDecl -> CompilationUnit -> CompilationUnit
