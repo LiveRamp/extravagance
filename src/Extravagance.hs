@@ -357,7 +357,7 @@ updateSensitiveFieldList sensitiveFieldsDecl (RedactionPatch fieldName) = modify
 insertMemberIntoClass :: MemberDecl -> CompilationUnit -> CompilationUnit
 insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
 
--- return True iff the class contains a sensitive field list MemberDecl
+-- return True iff the class does not contain a sensitive field list MemberDecl
 missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
 missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
 
