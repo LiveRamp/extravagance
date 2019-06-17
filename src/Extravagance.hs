@@ -329,8 +329,9 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     where redactedExp = Lit $ String "<redacted>"
 
 redactUnion :: MemberDecl -> MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
-redactUnion sensitiveFieldsDecl redactingToStringDecl patch = everywhere (mkT $ modifyIf isUnion patchMethod) where
-    patchMethod = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertRedactingToStringIfNeeded redactingToStringDecl
+redactUnion sensitiveFieldsDecl redactingToStringDecl patch compilationUnit
+    | isUnion compilationUnit = (insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertRedactingToStringIfNeeded redactingToStringDecl) compilationUnit
+    | otherwise = compilationUnit
 
 isUnion :: CompilationUnit -> Bool
 isUnion = hasAny isUnionClassDecl where
