@@ -362,10 +362,8 @@ missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
 missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
-isSensitiveFieldList sensitiveFieldsDecl decl = hasAny isSensitiveFieldsVarId decl where
-    varId = fromMaybe (trace "Failed to parse sensitive field declaration - this is a bug; please notify the maintainer(s)" "asdf") $ something (mkQ Nothing getVarId) sensitiveFieldsDecl
-    getVarId (VarId (Ident ident)) = Just ident
-    isSensitiveFieldsVarId (VarId (Ident ident))
-        | ident == varId = True
-        | otherwise = False
-    isSensitiveFieldsVarId _ = False
+isSensitiveFieldList sensitiveFieldsDecl = hasAny isSensitiveFieldsVarId where
+    varId = case something (mkQ Nothing getVarId) sensitiveFieldsDecl of
+        Just x -> x
+        where getVarId (VarId (Ident ident)) = Just ident
+    isSensitiveFieldsVarId (VarId (Ident ident)) = ident == varId
