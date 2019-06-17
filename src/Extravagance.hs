@@ -363,7 +363,7 @@ missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveField
 
 isSensitiveFieldList :: MemberDecl -> Decl -> Bool
 isSensitiveFieldList sensitiveFieldsDecl = hasAny isSensitiveFieldsVarId where
-    varId = case something (mkQ Nothing getVarId) sensitiveFieldsDecl of
+    getVarName (VarId (Ident name)) = name
+    sensitiveVarId = case something (mkQ Nothing (Just . getVarName)) sensitiveFieldsDecl of
         Just x -> x
-        where getVarId (VarId (Ident ident)) = Just ident
-    isSensitiveFieldsVarId (VarId (Ident ident)) = ident == varId
+    isSensitiveFieldsVarId varId = getVarName varId == sensitiveVarId
