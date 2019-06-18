@@ -338,9 +338,9 @@ redactUnion sensitiveFieldsDecl redactingToStringDecl patch compilationUnit
           doToString = insertRedactingToStringIfNeeded redactingToStringDecl
 
 isUnion :: CompilationUnit -> Bool
-isUnion = hasAny isUnionClassDecl where
-    isUnionClassDecl c@(ClassDecl _ _ _ (Just (ClassRefType (ClassType [(Ident "org", []), (Ident "apache", []), (Ident "thrift", []), (Ident "TUnion", _)]))) _ _) = True
-    isUnionClassDecl _ = False
+isUnion = hasAny (isSubClass ["org", "apache", "thrift", "TUnion"]) where
+    isSubClass superclassIdents (ClassType types) = superclassIdents == map toName types where
+        toName (Ident name, _) = name
 
 insertRedactingToStringIfNeeded :: MemberDecl -> CompilationUnit -> CompilationUnit
 insertRedactingToStringIfNeeded redactingToStringDecl = modifyIf toStringNotPresent doInsert where
