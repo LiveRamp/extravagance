@@ -257,7 +257,9 @@ applyPatch _ (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName m
 applyPatch _ (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
 applyPatch _ (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (Resources sensitiveFieldDecl redactingToStringDecl) (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) (redactMethod redactionPatch . redactUnion sensitiveFieldDecl redactingToStringDecl redactionPatch)
+applyPatch (Resources sensitiveFieldDecl redactingToStringDecl) (RP redactionPatch) =
+    trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch)
+          (redactMethod redactionPatch . redactUnion sensitiveFieldDecl redactingToStringDecl redactionPatch)
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -330,8 +332,10 @@ redactExp patch@(RedactionPatch target) exp = case exp of
 
 redactUnion :: MemberDecl -> MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 redactUnion sensitiveFieldsDecl redactingToStringDecl patch compilationUnit
-    | isUnion compilationUnit = (insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch . insertRedactingToStringIfNeeded redactingToStringDecl) compilationUnit
+    | isUnion compilationUnit = (doFieldList . doToString) compilationUnit
     | otherwise = compilationUnit
+    where doFieldList = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch
+          doToString = insertRedactingToStringIfNeeded redactingToStringDecl
 
 isUnion :: CompilationUnit -> Bool
 isUnion = hasAny isUnionClassDecl where
@@ -339,13 +343,15 @@ isUnion = hasAny isUnionClassDecl where
     isUnionClassDecl _ = False
 
 insertRedactingToStringIfNeeded :: MemberDecl -> CompilationUnit -> CompilationUnit
-insertRedactingToStringIfNeeded redactingToStringDecl = modifyIf toStringNotPresent (insertMemberIntoClass redactingToStringDecl) where
+insertRedactingToStringIfNeeded redactingToStringDecl = modifyIf toStringNotPresent doInsert where
     isToStringDecl (MethodDecl _ _ _ (Ident "toString") _ _ _ _) = True
     isToStringDecl _ = False
     toStringNotPresent = not . hasAny isToStringDecl
+    doInsert = insertMemberIntoClass redactingToStringDecl
 
 insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
-insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch decl = updateSensitiveFieldList sensitiveFieldsDecl patch $ modifyIf (missingSensitiveFieldList sensitiveFieldsDecl) (insertMemberIntoClass sensitiveFieldsDecl) decl
+insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch decl = updateSensitiveFieldList sensitiveFieldsDecl patch $
+        modifyIf (missingSensitiveFieldList sensitiveFieldsDecl) (insertMemberIntoClass sensitiveFieldsDecl) decl
 
 updateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
 updateSensitiveFieldList sensitiveFieldsDecl (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
