@@ -5,6 +5,7 @@ import           Accessors
 import           Util
 import qualified Data.Aeson           as A
 import qualified Data.ByteString.Lazy as B
+import qualified Data.Char            as C
 import           Data.Data
 import           Data.Generics
 import           Data.List
@@ -41,6 +42,8 @@ data RedactionPatch = RedactionPatch {
 
 data PatchDescription = MP MethodPatch | IP InterfacePatch | PreH PreHookPatch | RP RedactionPatch deriving (Show)
 
+-- A Map from class name to the patches that should be applied to that class
+-- Class name should be unqualified (e.g. "String", not "java.lang.String")
 newtype PatchSet =  PatchSet (M.Map String [PatchDescription]) deriving (Show)
 
 instance Semigroup PatchSet where
@@ -209,9 +212,9 @@ generateJsonPatchSet fileContents = case (A.eitherDecode fileContents :: Either 
     Left err -> trace err $ PatchSet M.empty
     Right (JsonPatchSet sensitiveFieldPatches) -> PatchSet $ M.map (map (RP . RedactionPatch)) sensitiveFieldPatches
 
-applyPatchSet :: PatchSet -> CompilationUnit -> CompilationUnit
-applyPatchSet (PatchSet patchMap) c = result where
-    patchFn = combinePatches <$> M.lookup (getIdentString c) patchMap
+applyPatchSet :: Resources -> PatchSet -> CompilationUnit -> CompilationUnit
+applyPatchSet r (PatchSet patchMap) c = result where
+    patchFn = combinePatches r <$> M.lookup (getIdentString c) patchMap
     patchedUnit = patchFn <*> pure c
     result = fromMaybe c patchedUnit
 
@@ -230,20 +233,33 @@ overwriteTail item ls = if identNotIn item ls then ls ++ [item] else ls
 (*++) :: Identified a => [a] -> [a] -> [a]
 (*++) first = foldl (.) id (map overwriteHead first)
 
-combinePatches :: [PatchDescription] -> CompilationUnit -> CompilationUnit
-combinePatches patches = foldl (.) id (map applyPatch patches)
+combinePatches :: Resources -> [PatchDescription] -> CompilationUnit -> CompilationUnit
+combinePatches r patches = foldl (.) id (map (applyPatch r) patches)
 
-applyPatch :: PatchDescription -> CompilationUnit -> CompilationUnit
-applyPatch (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
+data Resources = Resources {
+  sensitiveFieldDecl :: MemberDecl,
+  redactingToStringDecl :: MemberDecl
+}
+
+parseMemberDecl :: String -> MemberDecl
+parseMemberDecl string = case parser compilationUnit string of
+    Right decl -> case getMember decl of
+        Just d -> d
+        where getMember = something (mkQ Nothing (\x -> Just (x :: MemberDecl)))
+
+applyPatch :: Resources -> PatchDescription -> CompilationUnit -> CompilationUnit
+applyPatch _ (MP methodPatch) =  trace ("Applying Method Patch " ++ targetName methodPatch) $
     modifyDeclList appendToDeclarations . appendImports where
         fieldsAndMethods = map MemberDecl $ fieldsToInsert methodPatch ++ methodsToInsert methodPatch
         imports = importsToInsert methodPatch
         appendToDeclarations decls = (patchedAnnotationDecl : fieldsAndMethods) ++* filter (not . isPatched) decls
         appendImports (CompilationUnit package existingImports body ) = CompilationUnit package (imports ++* existingImports) body
-applyPatch (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
+applyPatch _ (IP interfacePatch) = trace ("Applying Interface Patch " ++ targetNameI interfacePatch) (modifyInterfaces appendInterface) where
     appendInterface refs = [ClassRefType $ interfaceToInsert interfacePatch] *++ refs
-applyPatch (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
-applyPatch (RP redactionPatch) = trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch) $ redactMethod redactionPatch
+applyPatch _ (PreH preHookPatch) = trace ("Applying PreHook Patch " ++ targetNameP preHookPatch) $ insertPreHook preHookPatch
+applyPatch (Resources sensitiveFieldDecl redactingToStringDecl) (RP redactionPatch) =
+    trace ("Applying toString Redaction Patch " ++ targetNameR redactionPatch)
+          (redactMethod redactionPatch . redactUnion sensitiveFieldDecl redactingToStringDecl redactionPatch)
 
 modifyClass :: (ClassDecl -> ClassDecl) -> CompilationUnit -> CompilationUnit
 modifyClass m = gmapT (mkT modifyTypeDecls) where
@@ -313,3 +329,48 @@ redactExp patch@(RedactionPatch target) exp = case exp of
     expName@(ExpName _) -> expName
     _ -> exp
     where redactedExp = Lit $ String "<redacted>"
+
+redactUnion :: MemberDecl -> MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+redactUnion sensitiveFieldsDecl redactingToStringDecl patch compilationUnit
+    | isUnion compilationUnit = (doFieldList . doToString) compilationUnit
+    | otherwise = compilationUnit
+    where doFieldList = insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch
+          doToString = insertRedactingToStringIfNeeded redactingToStringDecl
+
+isUnion :: CompilationUnit -> Bool
+isUnion = hasAny (isSubClass ["org", "apache", "thrift", "TUnion"]) where
+    isSubClass superclassIdents (ClassType types) = superclassIdents == map toName types where
+        toName (Ident name, _) = name
+
+insertRedactingToStringIfNeeded :: MemberDecl -> CompilationUnit -> CompilationUnit
+insertRedactingToStringIfNeeded redactingToStringDecl = modifyIf toStringNotPresent doInsert where
+    isToStringDecl (MethodDecl _ _ _ (Ident "toString") _ _ _ _) = True
+    isToStringDecl _ = False
+    toStringNotPresent = not . hasAny isToStringDecl
+    doInsert = insertMemberIntoClass redactingToStringDecl
+
+insertOrUpdateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+insertOrUpdateSensitiveFieldList sensitiveFieldsDecl patch decl = updateSensitiveFieldList sensitiveFieldsDecl patch $
+        modifyIf (missingSensitiveFieldList sensitiveFieldsDecl) (insertMemberIntoClass sensitiveFieldsDecl) decl
+
+updateSensitiveFieldList :: MemberDecl -> RedactionPatch -> CompilationUnit -> CompilationUnit
+updateSensitiveFieldList sensitiveFieldsDecl (RedactionPatch fieldName) = modifyDeclList (map doEdit) where
+    doEdit = modifyIf (isSensitiveFieldList sensitiveFieldsDecl) $ everywhere (mkT $ insertArgToMethodCall newArg) where
+        -- The _Fields name is always the union field name uppercased
+        -- e.g. foo_bar -> _Fields.FOO_BAR
+        newArg = ExpName (Name [Ident "_Fields",Ident (map C.toUpper fieldName)])
+        insertArgToMethodCall arg (MethodCall a args) = MethodCall a (arg:args)
+
+insertMemberIntoClass :: MemberDecl -> CompilationUnit -> CompilationUnit
+insertMemberIntoClass newMember = modifyDeclList ([MemberDecl newMember] ++)
+
+-- return True iff the class does not contain a sensitive field list MemberDecl
+missingSensitiveFieldList :: MemberDecl -> CompilationUnit -> Bool
+missingSensitiveFieldList sensitiveFieldsDecl c = not $ hasAny (isSensitiveFieldList sensitiveFieldsDecl) c
+
+isSensitiveFieldList :: MemberDecl -> Decl -> Bool
+isSensitiveFieldList sensitiveFieldsDecl = hasAny isSensitiveFieldsVarId where
+    getVarName (VarId (Ident name)) = name
+    sensitiveVarId = case something (mkQ Nothing (Just . getVarName)) sensitiveFieldsDecl of
+        Just x -> x
+    isSensitiveFieldsVarId varId = getVarName varId == sensitiveVarId

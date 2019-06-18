@@ -55,6 +55,12 @@ applicative (Dir _ fnContents) (Dir name contents) = Dir name (zipWith applicati
 applicative _ _ = Failed "" undefined
 
 main = do
+    sensitiveFieldsDeclString <- readFile "resources/redaction/TUnion/sensitiveFieldsDeclaration.java"
+    redactingToStringDeclString <- readFile "resources/redaction/TUnion/redactingToString.java"
+
+    let sensitiveFieldsDecl = parseMemberDecl sensitiveFieldsDeclString
+    let redactingToStringDecl = parseMemberDecl redactingToStringDeclString
+
     [javaPatchPath, jsonPatchPath, srcPath] <- getArgs
     javaPatchFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) javaPatchPath
     let patchCompilationUnits = getCompilationUnitsFromTree javaPatchFiles
@@ -65,7 +71,7 @@ main = do
     srcFiles <- readDirectoryWith (fmap T.unpack . TIO.readFile) srcPath
     let selectSourceFiles = filterDir (selectTargetedFiles patchSet) (dirTree srcFiles)
     let srcCompilationUnits = foldMaybes $ parseCompilationUnit <$> selectSourceFiles
-    let patchFunction = applyPatchSet patchSet
+    let patchFunction = applyPatchSet (Resources sensitiveFieldsDecl redactingToStringDecl) patchSet
     let patchedSrcUnits = fmap (prettyPrint . patchFunction) srcCompilationUnits
     let repairedPatchedSrcUnits = merge replaceMatchingStrings selectSourceFiles patchedSrcUnits
     writeDirectoryWith (\f s -> TIO.writeFile f (T.pack s)) (anchor srcFiles :/ repairedPatchedSrcUnits)
